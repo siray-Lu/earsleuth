@@ -32,6 +32,7 @@ worker/             Cloudflare Workers 後端
   build-songs.mjs   由 songs.js 產生 Worker 端要的歌庫
   test-live.mjs     全場競速回合引擎的離線模擬測試
 _serve.ps1          本機開發用的靜態伺服器（含房間 API）
+tools/make-images.ps1  由 icon-source.png 產生全部圖示與分享圖
 ```
 
 前端是純靜態檔案，放 GitHub Pages 就能跑。後端用 Cloudflare Workers +
