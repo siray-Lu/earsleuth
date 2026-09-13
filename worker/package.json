@@ -1,0 +1,18 @@
+{
+  "name": "sound-gap-detective-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "音隙偵探 — 連線對戰 / 個人檔案 / 排行榜 後端",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "songs": "node build-songs.mjs",
+    "deploy": "node build-songs.mjs && wrangler deploy",
+    "dev": "node build-songs.mjs && wrangler dev",
+    "test": "node test-live.mjs"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.127.0"
+  }
+}

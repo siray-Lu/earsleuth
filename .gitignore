@@ -1,0 +1,7 @@
+cloudflared.exe
+*.log
+worker/node_modules/
+worker/.wrangler/
+
+# 由 songs.js 自動產生，不進版控（部署時會重新產生）
+worker/songs.gen.js

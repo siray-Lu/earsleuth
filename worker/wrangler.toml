@@ -1,0 +1,47 @@
+name = "sound-gap-detective-api"
+main = "worker.js"
+compatibility_date = "2026-08-20"
+
+# ---------- Durable Object 綁定 ----------
+
+# 連線對戰房間，一間房一個 instance（用房號當 key）
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+# 個人檔案，一個玩家一個 instance；接回碼的索引也借用同一個 class
+[[durable_objects.bindings]]
+name = "PLAYERS"
+class_name = "PlayerDO"
+
+# 計時挑戰排行榜，一張榜一個 instance（年代_題數）
+[[durable_objects.bindings]]
+name = "BOARDS"
+class_name = "LeaderboardDO"
+
+# ---------- Migration ----------
+# 已經部署過的 tag 不能再改內容，只能往後追加新的 tag，
+# 動到舊的會被 wrangler 擋下來說 migration 歷史對不上。
+# 免費方案只支援 SQLite 版的 Durable Objects，一律用 new_sqlite_classes，
+# 用 new_classes 會被擋下來說要付費方案。
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PlayerDO"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["LeaderboardDO"]
+
+# 全場同題即時競速，全站共用一個 instance
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "LiveDO"
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["LiveDO"]
