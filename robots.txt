@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://siray-lu.github.io/Sound_Gap_Detective/sitemap.xml
+Sitemap: https://siray-lu.github.io/EarSleuth/sitemap.xml

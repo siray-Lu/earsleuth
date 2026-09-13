@@ -1,8 +1,8 @@
-# 音隙偵探
+# EarSleuth · 音隙偵探
 
 聽一小段就猜出歌名。收錄 699 首華語經典金曲，分成懷舊金曲（70~90 年代）與千禧新聲（2000 年後）。
 
-🎮 **線上遊玩：** https://siray-lu.github.io/Sound_Gap_Detective/
+🎮 **線上遊玩：** https://siray-lu.github.io/EarSleuth/
 
 ## 玩法
 

@@ -8,7 +8,7 @@
    使用者還看到舊版本 —— 那會毀掉「改完重新整理就生效」這個最大優點。
 */
 
-const CACHE = 'sound-gap-detective-v2';
+const CACHE = 'earsleuth-v1';
 // 只留最低限度的殼，離線時至少開得起來
 const SHELL = ['./', './index.html', './songs.js', './manifest.json', './icon-192.png'];
 
