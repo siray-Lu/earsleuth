@@ -5,23 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>音隙偵探</title>
 <meta name="description" content="免費線上華語猜歌遊戲。聽一小段音樂，猜猜這是哪首歌。收錄 699 首經典金曲，分成懷舊金曲（70~90 年代）與千禧新聲（2000 年後），有簡單／困難／魔王三種難度、計時挑戰排行榜、全場同題即時競速，還能開房間跟朋友連線搶答。">
-<link rel="canonical" href="https://siray-lu.github.io/EarSleuth/">
+<link rel="canonical" href="https://siray-lu.github.io/earsleuth/">
 
 <!-- 分享到 LINE / Facebook / Threads 時顯示的預覽資訊 -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="音隙偵探">
 <meta property="og:title" content="音隙偵探 — 華語老歌猜歌遊戲">
 <meta property="og:description" content="聽一小段就猜出歌名！699 首華語經典金曲，有全場即時競速、線上排行榜，也能開房間跟朋友連線搶答。">
-<meta property="og:url" content="https://siray-lu.github.io/EarSleuth/">
+<meta property="og:url" content="https://siray-lu.github.io/earsleuth/">
 <meta property="og:locale" content="zh_TW">
-<meta property="og:image" content="https://siray-lu.github.io/EarSleuth/og-image.png">
+<meta property="og:image" content="https://siray-lu.github.io/earsleuth/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="音隙偵探 — 聽一小段，猜猜這是哪首歌">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="音隙偵探 — 華語老歌猜歌遊戲">
 <meta name="twitter:description" content="聽一小段就猜出歌名！699 首華語經典金曲，有全場即時競速、線上排行榜，也能開房間跟朋友連線搶答。">
-<meta name="twitter:image" content="https://siray-lu.github.io/EarSleuth/og-image.png">
+<meta name="twitter:image" content="https://siray-lu.github.io/earsleuth/og-image.png">
 
 <!-- 加到手機主畫面後會全螢幕開啟，看起來就像一般 App -->
 <link rel="manifest" href="manifest.json">
@@ -570,9 +570,29 @@
     text-align:center; font-size:42px; font-weight:700;
     color:var(--accent2); line-height:1.2; margin:6px 0;
   }
+
+  /* ---------- 全域警告列 ----------
+     平常不出現。一旦出現就代表「你以為在存的東西其實沒存到」這種等級的問題，
+     所以它固定在畫面最上方、蓋過所有內容，不給使用者忽略掉的機會。 */
+  #alert-bar{
+    position:fixed; left:0; right:0; top:0; z-index:300;
+    background:#7a2f12; border-bottom:2px solid #ff9a4d;
+    color:#ffe8d6; padding:13px 18px;
+    font-size:14px; line-height:1.65; text-align:center;
+    box-shadow:0 8px 26px rgba(0,0,0,.45);
+  }
+  #alert-bar .msg{ margin-bottom:9px; }
+  #alert-bar .acts{ display:flex; gap:9px; justify-content:center; flex-wrap:wrap; }
+  #alert-bar button{
+    padding:7px 16px; border-radius:999px; cursor:pointer;
+    font-family:inherit; font-size:13px; font-weight:700;
+    border:1px solid #ff9a4d; background:#ff9a4d; color:#3a1400;
+  }
+  #alert-bar button.ghost{ background:transparent; color:#ffd9bd; }
 </style>
 </head>
 <body>
+<div id="alert-bar" style="display:none;"></div>
 <div class="app">
   <h1>🎵 音隙偵探 🎵</h1>
   <div id="api-warning" style="display:none; background:#3a1b26; border:1px solid var(--red); color:#ffd9d9; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:16px; text-align:center;">
@@ -2769,8 +2789,13 @@ async function refreshProfileFromServer(){
       saveLocalProfile();
       renderIdentity();
       if(document.getElementById('screen-profile').classList.contains('active')) renderProfileScreen();
+    }else if(d && d.error === 'no profile'){
+      // 伺服器認得這個請求，但說「沒有這個人」。這跟連不上網路是完全不同的狀況：
+      // 代表本機這份檔案跟後端已經對不上（後端換過、資料被清掉、或這頁是舊版）。
+      // 這裡如果跟著默默吞掉，使用者會繼續玩下去，而所有成績都寫進黑洞。
+      showOrphanAlert();
     }
-  }catch(e){ /* 離線就用本機那份，不吵使用者 */ }
+  }catch(e){ /* 這裡才是真的離線，用本機那份就好，不吵使用者 */ }
 }
 
 // 當初斷網建的檔案，等有網路了補註冊，並把這段期間累積的統計一次補上去
@@ -2823,6 +2848,8 @@ async function recordGameResult(correct, total){
     refreshProfileFromServer();
     syncPendingProfile();
   }
+  // 版本檢查跟有沒有檔案無關，一律要跑
+  checkForUpdate();
 })();
 
 /* ===================== 計時挑戰排行榜 =====================
@@ -3135,6 +3162,13 @@ document.getElementById('go-live-btn').addEventListener('click', async ()=>{
 
   try{
     const d = await liveApi('/api/live/join', { playerId: profile.id, token: profile.token });
+    // 「查無此檔案」要單獨處理。丟進 catch 只會顯示「連不上伺服器」，
+    // 使用者會以為是網路問題而一直重試，其實是他的檔案跟後端對不上了。
+    if(d && !d.ok && (d.error === 'no profile' || d.error === 'bad token')){
+      showOrphanAlert();
+      document.getElementById('live-hint').textContent = '你的個人檔案跟伺服器對不上，無法參加競速。';
+      return;
+    }
     if(!d || !d.ok) throw new Error('join failed');
     live.joined = true;
     live.primedRound = 0; live.playedRound = 0; live.answeredRound = 0;
@@ -3399,6 +3433,116 @@ function startLiveBar(clipSeconds){
 }
 function stopLiveBar(){
   if(live.barRaf){ cancelAnimationFrame(live.barRaf); live.barRaf = null; }
+}
+
+/* ===================== 版本與檔案狀態的守門員 =====================
+   這一段是為了一次真實事故加的：後端換過名字之後，使用者的瀏覽器還抱著
+   舊的 index.html，舊頁面繼續對著已經淘汰的後端寫分數。畫面上一切正常，
+   排行榜也照跑，直到清掉快取才發現那段時間玩的東西全部不存在。
+
+   最致命的不是資料掉了，是「看起來正常」。所以這裡做兩件事：
+     1. 開場比對版本，發現自己是舊版就明講，並提供一鍵清乾淨重載
+     2. 伺服器明確說「查無此檔案」時要吼出來，不能跟「連不上網路」一樣默默吞掉
+======================================================= */
+
+// 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
+// 手動改會跟 version.json 對不起來，不要自己動。
+const APP_VERSION = '2026-09-19-1459';
+
+function showAlert(msgHtml, actions){
+  const bar = document.getElementById('alert-bar');
+  bar.innerHTML = '';
+
+  const msg = document.createElement('div');
+  msg.className = 'msg';
+  msg.innerHTML = msgHtml;
+  bar.appendChild(msg);
+
+  const acts = document.createElement('div');
+  acts.className = 'acts';
+  (actions || []).forEach(a=>{
+    const b = document.createElement('button');
+    b.textContent = a.label;
+    if(a.ghost) b.className = 'ghost';
+    b.addEventListener('click', a.onClick);
+    acts.appendChild(b);
+  });
+  bar.appendChild(acts);
+
+  bar.style.display = 'block';
+  // 警告列是固定定位的，會蓋住頁面頂端，把內容往下推開
+  document.body.style.paddingTop = bar.offsetHeight + 'px';
+}
+
+function hideAlert(){
+  document.getElementById('alert-bar').style.display = 'none';
+  document.body.style.paddingTop = '';
+}
+
+// 把所有快取與 Service Worker 清乾淨再重載。
+// 只呼叫 location.reload() 不夠 —— 舊的 HTML 可能是瀏覽器的 HTTP 快取給的，
+// 而 Service Worker 也可能還握著上一版的殼。
+async function hardReload(){
+  try{
+    if(window.caches){
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  }catch(e){}
+  try{
+    if(navigator.serviceWorker){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  }catch(e){}
+  // 加上時間戳，確保連 HTTP 快取都繞過
+  location.replace(location.pathname + '?r=' + Date.now());
+}
+
+// 開場檢查自己是不是舊版。version.json 很小，而且一定要繞過所有快取去拿，
+// 不然拿到的可能就是造成問題的那份舊資料。
+async function checkForUpdate(){
+  try{
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) return;
+    const d = await res.json();
+    if(!d || !d.version || d.version === APP_VERSION) return;
+
+    showAlert(
+      '⚠️ 這個頁面是舊版本（' + APP_VERSION + '），目前最新是 ' + d.version + '。<br>' +
+      '舊版可能連到已經停用的伺服器，成績不會被記錄。請重新載入。',
+      [{ label: '清除快取並重新載入', onClick: hardReload }]
+    );
+  }catch(e){ /* 拿不到就算了，總比擋住玩家好 */ }
+}
+
+// 伺服器明確回報「這個 playerId 不存在」時呼叫。
+// 這跟網路不通完全是兩回事，不能一起吞掉。
+let profileOrphaned = false;
+function showOrphanAlert(){
+  if(profileOrphaned) return;
+  profileOrphaned = true;
+  showAlert(
+    '⚠️ 伺服器上找不到你的個人檔案，<b>現在玩的成績都不會被記錄</b>。<br>' +
+    '通常是因為這個頁面是舊版、連到了已經停用的伺服器。',
+    [
+      { label: '清除快取並重新載入', onClick: hardReload },
+      { label: '我有接回碼', ghost: true, onClick: ()=>{
+          hideAlert(); profileOrphaned = false;
+          document.getElementById('restore-code').value = '';
+          document.getElementById('restore-error').textContent = '';
+          showScreen('screen-profile-restore');
+        } },
+      { label: '重新建立檔案', ghost: true, onClick: ()=>{
+          hideAlert(); profileOrphaned = false;
+          try{ localStorage.removeItem(PROFILE_KEY); }catch(e){}
+          profile = null;
+          renderIdentity();
+          initSetupScreen();
+          showScreen('screen-profile-setup');
+        } },
+    ]
+  );
 }
 </script>
 </body>

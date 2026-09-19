@@ -2,7 +2,7 @@
 
 聽一小段就猜出歌名。收錄 699 首華語經典金曲，分成懷舊金曲（70~90 年代）與千禧新聲（2000 年後）。
 
-🎮 **線上遊玩：** https://siray-lu.github.io/EarSleuth/
+🎮 **線上遊玩：** https://siray-lu.github.io/earsleuth/
 
 ## 玩法
 
@@ -32,7 +32,9 @@ worker/             Cloudflare Workers 後端
   build-songs.mjs   由 songs.js 產生 Worker 端要的歌庫
   test-live.mjs     全場競速回合引擎的離線模擬測試
 _serve.ps1          本機開發用的靜態伺服器（含房間 API）
-tools/make-images.ps1  由 icon-source.png 產生全部圖示與分享圖
+tools/make-images.ps1     由 icon-source.png 產生全部圖示與分享圖
+tools/stamp-version.mjs  蓋版本戳記，部署前一定要跑
+version.json             前端用來判斷自己是不是舊版
 ```
 
 前端是純靜態檔案，放 GitHub Pages 就能跑。後端用 Cloudflare Workers +

@@ -8,7 +8,7 @@
    使用者還看到舊版本 —— 那會毀掉「改完重新整理就生效」這個最大優點。
 */
 
-const CACHE = 'earsleuth-v1';
+const CACHE = 'earsleuth-v2';
 // 只留最低限度的殼，離線時至少開得起來
 const SHELL = ['./', './index.html', './songs.js', './manifest.json', './icon-192.png'];
 
@@ -30,6 +30,10 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   // 只管自己網域的 GET；YouTube、Cloudflare Workers 的請求一律不要插手
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+
+  // version.json 絕對不能經手。它存在的意義就是讓頁面判斷自己是不是舊版，
+  // 一旦被快取住就會回報「你已經是最新的」，這個機制反而變成幫兇。
+  if (new URL(req.url).pathname.endsWith('/version.json')) return;
 
   e.respondWith(
     fetch(req)
