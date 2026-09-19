@@ -25,7 +25,7 @@
 
 <!-- 加到手機主畫面後會全螢幕開啟，看起來就像一般 App -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#1a1030">
+<meta name="theme-color" content="#0a2447">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -33,23 +33,23 @@
 <meta name="apple-mobile-web-app-title" content="音隙偵探">
 <style>
   :root{
-    --bg1:#1a1030;
-    --bg2:#0d0818;
-    --accent:#ff5fa2;
-    --accent2:#5fd0ff;
-    --gold:#ffcf5c;
-    --green:#4ade80;
-    --red:#f87171;
-    --card:#231a3d;
-    --text:#f4f1fb;
-    --muted:#a89dc4;
+    --bg1:#0a2447;
+    --bg2:#03122c;
+    --accent:#2ee3dc;
+    --accent2:#62b8ff;
+    --gold:#ffb340;
+    --green:#3ddc97;
+    --red:#ff6b6b;
+    --card:#0e2a52;
+    --text:#eaf3ff;
+    --muted:#8fadd0;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
     min-height:100vh;
     font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
-    background:radial-gradient(circle at 20% 10%, #341b52 0%, var(--bg1) 40%, var(--bg2) 100%);
+    background:radial-gradient(circle at 20% 10%, #14386e 0%, var(--bg1) 40%, var(--bg2) 100%);
     color:var(--text);
     display:flex;
     align-items:center;
@@ -99,10 +99,10 @@
   .diff-card:active{ transform:translateY(0); }
   .diff-card .name{ font-size:20px; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:8px;}
   .diff-card .meta{ font-size:13px; color:var(--muted); line-height:1.6; }
-  .diff-easy{ border-color:#4ade8055; } .diff-easy:hover{ border-color:var(--green); }
-  .diff-hard{ border-color:#ffcf5c55; } .diff-hard:hover{ border-color:var(--gold); }
-  .diff-boss{ border-color:#f8717155; } .diff-boss:hover{ border-color:var(--red); }
-  .diff-random{ border-color:#5fd0ff55; grid-column:1 / -1;} .diff-random:hover{ border-color:var(--accent2); }
+  .diff-easy{ border-color:#3ddc9755; } .diff-easy:hover{ border-color:var(--green); }
+  .diff-hard{ border-color:#ffb34055; } .diff-hard:hover{ border-color:var(--gold); }
+  .diff-boss{ border-color:#ff6b6b55; } .diff-boss:hover{ border-color:var(--red); }
+  .diff-random{ border-color:#62b8ff55; grid-column:1 / -1;} .diff-random:hover{ border-color:var(--accent2); }
   .badge{ font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); }
 
   /* ---------- 遊戲畫面 ---------- */
@@ -132,7 +132,7 @@
     border-color:var(--accent2);
     font-weight:700;
   }
-  .mp-chip.ready{ color:var(--green); border-color:#4ade8055; }
+  .mp-chip.ready{ color:var(--green); border-color:#3ddc9755; }
   .mp-chip.winner{
     border-color:var(--green);
   }
@@ -150,7 +150,7 @@
     border-radius:50%;
     overflow:hidden;
     background:#000;
-    box-shadow:0 0 0 6px #120a22, 0 20px 40px rgba(0,0,0,.5);
+    box-shadow:0 0 0 6px #0a1628, 0 20px 40px rgba(0,0,0,.5);
   }
   .video-crop{
     position:absolute;
@@ -196,8 +196,8 @@
     border-radius:50%;
     background:
       repeating-radial-gradient(circle at 50% 50%,
-        #161018 0px, #161018 3px,
-        #201829 3px, #201829 6px);
+        #101827 0px, #101827 3px,
+        #1a2436 3px, #1a2436 6px);
     display:flex;
     align-items:center;
     justify-content:center;
@@ -221,17 +221,17 @@
   .label{
     width:96px; height:96px;
     border-radius:50%;
-    background:radial-gradient(circle at 35% 30%, var(--accent), #8a1655 75%);
+    background:radial-gradient(circle at 35% 30%, var(--accent), #0f6e6a 75%);
     display:flex;
     align-items:center;
     justify-content:center;
-    box-shadow:0 0 0 3px #0d0818, 0 4px 14px rgba(0,0,0,.5);
+    box-shadow:0 0 0 3px #03122c, 0 4px 14px rgba(0,0,0,.5);
   }
   .play-btn{
     width:64px; height:64px;
     border-radius:50%;
     background:rgba(255,255,255,.92);
-    color:#231a3d;
+    color:#0e2a52;
     font-size:26px;
     font-weight:700;
     display:flex;
@@ -280,14 +280,14 @@
   }
   .choice-btn:hover:not(:disabled){ border-color:var(--accent2); transform:translateY(-2px); }
   .choice-btn:disabled{ cursor:default; }
-  .choice-btn.correct{ border-color:var(--green); background:#1f3a2c; }
-  .choice-btn.wrong{ border-color:var(--red); background:#3a1f24; }
+  .choice-btn.correct{ border-color:var(--green); background:#0f3a2e; }
+  .choice-btn.wrong{ border-color:var(--red); background:#3a1b26; }
 
   .next-wrap{ text-align:center; margin-top:20px; }
   .btn-main{
     background:linear-gradient(90deg,var(--accent),var(--accent2));
     border:none;
-    color:#1a1030;
+    color:#0a2447;
     font-weight:700;
     padding:12px 28px;
     border-radius:999px;
@@ -329,14 +329,14 @@
     border:none; cursor:pointer; font-family:inherit;
     font-size:14px; font-weight:700; color:var(--text);
     padding:10px 20px; border-radius:999px;
-    background:rgba(95,208,255,.12);
+    background:rgba(98,184,255,.12);
     /* 用 inset shadow 當外框，hover 變色時不會讓按鈕尺寸跳動 */
-    box-shadow:inset 0 0 0 1.5px rgba(95,208,255,.45);
+    box-shadow:inset 0 0 0 1.5px rgba(98,184,255,.45);
     transition:background .18s ease, box-shadow .18s ease, transform .18s ease;
   }
   .era-swap:hover{
-    background:rgba(95,208,255,.22);
-    box-shadow:inset 0 0 0 1.5px var(--accent2), 0 6px 18px rgba(95,208,255,.25);
+    background:rgba(98,184,255,.22);
+    box-shadow:inset 0 0 0 1.5px var(--accent2), 0 6px 18px rgba(98,184,255,.25);
     transform:translateY(-1px);
   }
   .era-swap:active{ transform:translateY(0); }
@@ -380,7 +380,7 @@
     position:relative;
     border:none; border-radius:999px; padding:12px 18px;
     background:linear-gradient(90deg,var(--accent),var(--accent2));
-    color:#1a1030; font-weight:700; font-size:14px; cursor:pointer;
+    color:#0a2447; font-weight:700; font-size:14px; cursor:pointer;
     box-shadow:0 6px 18px rgba(0,0,0,0.35);
   }
   #mp-chat-badge{
@@ -409,7 +409,7 @@
   }
   .mp-chat-msg.me{ align-self:flex-end; }
   .mp-chat-msg.me .who{ text-align:right; }
-  .mp-chat-msg.me .bubble{ background:var(--accent); color:#1a1030; }
+  .mp-chat-msg.me .bubble{ background:var(--accent); color:#0a2447; }
   .mp-chat-msg.system{ align-self:center; }
   .mp-chat-msg.system .bubble{ background:transparent; color:var(--muted); font-size:12px; padding:2px; }
   #mp-chat-form{
@@ -421,7 +421,7 @@
   }
   #mp-chat-send{
     border:none; border-radius:999px; padding:9px 14px;
-    background:var(--accent2); color:#0d0818; font-weight:700; font-size:13px; cursor:pointer;
+    background:var(--accent2); color:#03122c; font-weight:700; font-size:13px; cursor:pointer;
   }
 
   /* ---------- 個人檔案 ---------- */
@@ -469,7 +469,7 @@
     transition:transform .12s ease, border-color .12s ease;
   }
   .avatar-opt:hover{ transform:translateY(-2px); }
-  .avatar-opt.sel{ border-color:var(--accent2); background:rgba(95,208,255,.12); }
+  .avatar-opt.sel{ border-color:var(--accent2); background:rgba(98,184,255,.12); }
 
   .color-row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   .color-opt{
@@ -496,16 +496,16 @@
   .rc-code{
     font-family:"Consolas","Menlo",monospace; font-size:22px; letter-spacing:3px;
     text-align:center; color:var(--gold); padding:14px 10px;
-    background:rgba(255,207,92,.08); border:1px dashed rgba(255,207,92,.35);
+    background:rgba(255,179,64,.08); border:1px dashed rgba(255,179,64,.35);
     border-radius:12px; user-select:all; word-break:break-all;
   }
   .warn-note{
-    background:rgba(248,113,113,.1); border:1px solid rgba(248,113,113,.3);
+    background:rgba(255,107,107,.1); border:1px solid rgba(255,107,107,.3);
     color:#ffd9d9; border-radius:10px; padding:10px 14px;
     font-size:13px; line-height:1.6; margin-top:12px;
   }
   .sync-note{
-    background:rgba(255,207,92,.1); border:1px solid rgba(255,207,92,.3);
+    background:rgba(255,179,64,.1); border:1px solid rgba(255,179,64,.3);
     color:#ffeec2; border-radius:10px; padding:10px 14px;
     font-size:13px; line-height:1.6; text-align:center; margin-bottom:16px;
   }
@@ -519,7 +519,7 @@
     transition:background .15s ease, color .15s ease;
   }
   .lb-tab:hover{ color:var(--text); }
-  .lb-tab.sel{ background:var(--accent2); border-color:var(--accent2); color:#0d0818; font-weight:700; }
+  .lb-tab.sel{ background:var(--accent2); border-color:var(--accent2); color:#03122c; font-weight:700; }
 
   .lb-list{ display:flex; flex-direction:column; gap:6px; }
   .lb-row{
@@ -528,13 +528,13 @@
     border:1px solid transparent;
   }
   /* 自己那一列要一眼看得到，不然在一長串名字裡根本找不到 */
-  .lb-row.me{ border-color:var(--accent2); background:rgba(95,208,255,.1); }
+  .lb-row.me{ border-color:var(--accent2); background:rgba(98,184,255,.1); }
   .lb-rank{
     width:36px; flex:0 0 auto; text-align:center;
     font-weight:700; font-size:15px; color:var(--muted);
   }
   .lb-rank.r1{ color:var(--gold); font-size:19px; }
-  .lb-rank.r2{ color:#dcdce8; font-size:17px; }
+  .lb-rank.r2{ color:#d5e2f2; font-size:17px; }
   .lb-rank.r3{ color:#e0a172; font-size:17px; }
   .lb-name{
     flex:1; min-width:0; font-size:15px;
@@ -558,7 +558,7 @@
     background:var(--card); border-radius:10px; padding:6px 12px;
     border:1px solid transparent; font-size:14px;
   }
-  .live-row.me{ border-color:var(--accent2); background:rgba(95,208,255,.1); }
+  .live-row.me{ border-color:var(--accent2); background:rgba(98,184,255,.1); }
   .live-row .rk{ width:26px; text-align:center; color:var(--muted); font-weight:700; }
   .live-row .nm{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .live-row .sc{ font-weight:700; color:var(--accent2); font-family:"Consolas","Menlo",monospace; }
@@ -575,7 +575,7 @@
 <body>
 <div class="app">
   <h1>🎵 音隙偵探 🎵</h1>
-  <div id="api-warning" style="display:none; background:#4a1f24; border:1px solid var(--red); color:#ffd9d9; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:16px; text-align:center;">
+  <div id="api-warning" style="display:none; background:#3a1b26; border:1px solid var(--red); color:#ffd9d9; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:16px; text-align:center;">
     ⚠️ 無法連上 YouTube 播放服務。請確認裝置有網路連線、關閉廣告攔截 / 隱私外掛（可能封鎖 youtube.com），再重新整理頁面。
   </div>
 
@@ -1309,10 +1309,10 @@ function onPlayerError(e){
 const MEDIA_ART_PLACEHOLDER =
   'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">' +
-    '<rect width="512" height="512" fill="#1a1030"/>' +
-    '<circle cx="256" cy="256" r="228" fill="#161018"/>' +
+    '<rect width="512" height="512" fill="#0a2447"/>' +
+    '<circle cx="256" cy="256" r="228" fill="#101827"/>' +
     '<circle cx="256" cy="256" r="150" fill="none" stroke="#241a33" stroke-width="10"/>' +
-    '<circle cx="256" cy="256" r="88" fill="#ff5fa2"/>' +
+    '<circle cx="256" cy="256" r="88" fill="#2ee3dc"/>' +
     '<circle cx="256" cy="256" r="30" fill="#fdf4fb"/></svg>'
   );
 let mediaMaskTimers = [];
@@ -2503,8 +2503,8 @@ const AVATAR_EMOJIS = [
   "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸",
 ];
 const AVATAR_COLORS = [
-  "#ff5fa2","#5fd0ff","#ffcf5c","#4ade80",
-  "#f87171","#a78bfa","#fb923c","#2dd4bf",
+  "#2ee3dc","#62b8ff","#ffb340","#3ddc97",
+  "#ff6b6b","#a78bfa","#fb923c","#2dd4bf",
 ];
 
 // 個人檔案一律打雲端，不跟著 API_BASE 走本機。
@@ -2906,7 +2906,7 @@ function lbRow(entry, rank, isMe){
 
   const av = document.createElement('span');
   av.className = 'avatar avatar-sm';
-  paintAvatar(av, entry.avatar || { emoji:'🎤', color:'#ff5fa2' });
+  paintAvatar(av, entry.avatar || { emoji:'🎤', color:'#2ee3dc' });
   row.appendChild(av);
 
   const name = document.createElement('div');
@@ -3355,7 +3355,7 @@ function renderLiveBoard(d){
 
     const av = document.createElement('span');
     av.className = 'avatar avatar-sm';
-    paintAvatar(av, e.avatar || { emoji:'🎤', color:'#ff5fa2' });
+    paintAvatar(av, e.avatar || { emoji:'🎤', color:'#2ee3dc' });
     row.appendChild(av);
 
     const nm = document.createElement('div');
