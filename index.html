@@ -1896,6 +1896,9 @@ const API_BASE = isLocalServer() ? '' : CLOUD_API_BASE;
 let mp = {
   code: null,
   playerId: null,
+  // 房間專用密鑰。playerId 全房都看得到，不能用來證明身分，
+  // 所有會改動房間的操作都要另外帶這個。
+  secret: null,
   name: null,
   pollTimer: null,
   countdownTimer: null,
@@ -1969,7 +1972,7 @@ document.getElementById('mp-chat-form').addEventListener('submit', async (e)=>{
   try{
     await fetch(API_BASE + '/api/send-chat', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, text })
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret, text })
     });
   }catch(err){ console.warn('send-chat failed', err); }
 });
@@ -2019,8 +2022,9 @@ async function createRoom(){
     if(!data.ok){ alert('建立房間失敗，請再試一次'); return; }
     mp.code = data.code;
     mp.playerId = data.playerId;
+    mp.secret = data.secret;
     mp.name = data.name;
-    mpRememberPlayerId(data.code, data.playerId);
+    mpRememberPlayerId(data.code, data.playerId, data.secret);
     showScreen('screen-mp-lobby');
     document.getElementById('mp-lobby-code').textContent = data.code;
     document.getElementById('mp-lobby-share').style.display = '';
@@ -2052,7 +2056,7 @@ async function startMpGame(diffKey){
   try{
     const res = await fetch(API_BASE + '/api/start-game', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, diffKey, songIds, clipSeconds, starts })
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret, diffKey, songIds, clipSeconds, starts })
     });
     const d = await res.json();
     if(d && d.ok === false && d.error === 'not everyone is ready'){
@@ -2092,7 +2096,7 @@ document.getElementById('mp-ready-btn').addEventListener('click', async ()=>{
   try{
     const res = await fetch(API_BASE + '/api/set-ready', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, ready: next })
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret, ready: next })
     });
     const d = await res.json();
     if(d.ok) mpHandleState(d);
@@ -2116,7 +2120,7 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
       method:'POST', headers:{'Content-Type':'application/json'},
       // 上次在同一間房用過的身分，如果伺服器上還在就直接沿用，
       // 免得「不小心退出後再加入」時房間裡出現兩個一樣的人
-      body: JSON.stringify({ code, name, rejoinId: mpRecallPlayerId(code) })
+      body: JSON.stringify({ code, name, rejoinId: mpRecallSeat(code).id, secret: mpRecallSeat(code).secret })
     });
     const data = await res.json();
     if(!data.ok){
@@ -2127,8 +2131,9 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
     }
     mp.code = code;
     mp.playerId = data.playerId;
+    mp.secret = data.secret;
     mp.name = data.name;
-    mpRememberPlayerId(code, data.playerId);
+    mpRememberPlayerId(code, data.playerId, data.secret);
     showScreen('screen-mp-lobby');
     document.getElementById('mp-lobby-code').textContent = code;
     document.getElementById('mp-lobby-share').style.display = 'none';
@@ -2144,12 +2149,21 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
 /* 記住自己在某個房號用過的 playerId。
    關掉分頁再開會是新的分頁，所以用 localStorage 而不是 sessionStorage。
    伺服器上如果那個 id 已經不在了，會自動配一個新的，所以留著舊的沒關係。 */
-function mpRememberPlayerId(code, playerId){
-  try{ localStorage.setItem('mp-pid-' + code, playerId); }catch(e){}
+function mpRememberPlayerId(code, playerId, secret){
+  try{ localStorage.setItem('mp-pid-' + code, JSON.stringify({ id: playerId, secret })); }catch(e){}
 }
-function mpRecallPlayerId(code){
-  try{ return localStorage.getItem('mp-pid-' + code) || null; }catch(e){ return null; }
+function mpRecallSeat(code){
+  try{
+    const raw = localStorage.getItem('mp-pid-' + code);
+    if(!raw) return { id: null, secret: null };
+    // 舊格式只存了 id 這個純字串。沒有密鑰就重連不了，會被當成新玩家加入，
+    // 這是可以接受的 —— 總比留一條「沒帶密鑰也放行」的後門好。
+    if(raw[0] !== '{') return { id: raw, secret: null };
+    const o = JSON.parse(raw);
+    return { id: o.id || null, secret: o.secret || null };
+  }catch(e){ return { id: null, secret: null }; }
 }
+function mpRecallPlayerId(code){ return mpRecallSeat(code).id; }
 function mpForgetPlayerId(code){
   try{ localStorage.removeItem('mp-pid-' + code); }catch(e){}
 }
@@ -2159,12 +2173,13 @@ function mpLeaveRoom(){
   if(mp.code && mp.playerId){
     fetch(API_BASE + '/api/leave-room', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code: mp.code, playerId: mp.playerId })
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret })
     }).catch(()=>{});
     mpForgetPlayerId(mp.code);
   }
   mp.code = null;
   mp.playerId = null;
+  mp.secret = null;
   try{ ytPlayer.pauseVideo(); }catch(err){}
   mpHideChatWidget();
   showScreen('screen-era');
@@ -2179,7 +2194,7 @@ document.getElementById('mp-lobby-leave-btn').addEventListener('click', mpLeaveR
    而預檢在頁面關閉時發不出去；伺服器兩邊都是直接 parse 內容，不看 Content-Type。 */
 window.addEventListener('pagehide', ()=>{
   if(!mp.code || !mp.playerId) return;
-  const payload = JSON.stringify({ code: mp.code, playerId: mp.playerId });
+  const payload = JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret });
   try{
     const blob = new Blob([payload], { type:'text/plain;charset=UTF-8' });
     navigator.sendBeacon(API_BASE + '/api/leave-room', blob);
@@ -2191,7 +2206,7 @@ document.getElementById('mp-result-lobby-btn').addEventListener('click', async (
   try{
     await fetch(API_BASE + '/api/return-to-lobby', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code: mp.code })
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret })
     });
   }catch(err){}
   document.getElementById('mp-lobby-code').textContent = mp.code;
@@ -2443,7 +2458,7 @@ async function mpSubmitAnswer(chosenSong, correctSong){
   try{
     await fetch(API_BASE + '/api/submit-answer', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, songId: chosenSong.id })
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, secret: mp.secret, songId: chosenSong.id })
     });
   }catch(err){ console.warn('submit-answer failed', err); }
 }
@@ -3490,7 +3505,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1225';
+const APP_VERSION = '2026-09-20-1233';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

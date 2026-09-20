@@ -474,6 +474,26 @@ export class RoomDO {
     return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
   }
 
+  // 房間專用的密鑰。playerId 會隨房間狀態廣播給全房（名單上要顯示誰是誰），
+  // 所以它不能兼任「證明我是我」的憑證 —— 不然同房任何人都能用你的 id
+  // 替你作答、用你的名義發言、甚至把你踢出房間。
+  // 密鑰只在加入的當下回給本人，之後每一次寫入都要帶上。
+  newSecret() {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+
+  // 所有會改動房間狀態的請求都要先過這裡。通過回傳 playerId，不通過回 null。
+  authed(body) {
+    const pid = body && body.playerId && String(body.playerId);
+    if (!pid) return null;
+    const p = this.room.players[pid];
+    if (!p) return null;
+    // 這個機制上線前建立的舊房間沒有密鑰，一律當作驗不過，讓他們重新加入拿一組。
+    // 留一條「沒有密鑰就放行」的相容路徑等於留後門，攻擊者只要不帶密鑰即可。
+    if (!p.secret || body.secret !== p.secret) return null;
+    return pid;
+  }
+
   // 把「早就離線但沒送出 leave-room」的人清掉（例如瀏覽器當掉、斷網）。
   // 不清的話，那個人重新加入就會在名單裡出現兩次。
   pruneGhosts() {
@@ -615,11 +635,12 @@ export class RoomDO {
     if (path === "/init") {
       if (this.room) return this.json({ ok: false, error: "exists" });
       const playerId = this.newPlayerId();
+      const hostSecret = this.newSecret();
       const name = cleanRoomName(body.name, "Player1");
       this.room = {
         code: body.code,
         hostPlayerId: playerId,
-        players: { [playerId]: { name, score: 0, ready: false, lastSeen: this.now() } },
+        players: { [playerId]: { name, secret: hostSecret, score: 0, ready: false, lastSeen: this.now() } },
         nextPlayerNum: 2,
         diffKey: null,
         songIds: [],
@@ -634,7 +655,7 @@ export class RoomDO {
         chatSeq: 0,
       };
       await this.save();
-      return this.json({ ok: true, code: this.room.code, playerId, name });
+      return this.json({ ok: true, code: this.room.code, playerId, name, secret: hostSecret });
     }
 
     if (!this.room) return this.json({ ok: false, error: "room not found" }, 404);
@@ -645,26 +666,33 @@ export class RoomDO {
       // 同一個人重新連上來（重新整理、不小心關掉分頁又回來）就沿用原本的位子，
       // 不要再開一個新的，否則名單上會出現兩個同樣的人。
       const rejoinId = body.rejoinId && String(body.rejoinId);
-      if (rejoinId && room.players[rejoinId]) {
+      // 重連也要證明是本人。不驗的話，別人從名單抄走你的 id 就能接管你的位子與分數。
+      if (rejoinId && room.players[rejoinId] && this.authed({ playerId: rejoinId, secret: body.secret })) {
         const nm = cleanRoomName(body.name, "");
         if (nm) room.players[rejoinId].name = nm;
         room.players[rejoinId].lastSeen = this.now();
         await this.save();
-        return this.json({ ok: true, playerId: rejoinId, name: room.players[rejoinId].name, rejoined: true });
+        return this.json({
+          ok: true, playerId: rejoinId, name: room.players[rejoinId].name,
+          secret: room.players[rejoinId].secret, rejoined: true,
+        });
       }
       if (room.phase !== "lobby") return this.json({ ok: false, error: "already started" }, 409);
       if (Object.keys(room.players).length >= MAX_PLAYERS)
         return this.json({ ok: false, error: "room full" }, 409);
       const playerId = this.newPlayerId();
+      const secret = this.newSecret();
       const name = cleanRoomName(body.name, "Player" + room.nextPlayerNum);
       room.nextPlayerNum++;
-      room.players[playerId] = { name, score: 0, ready: false, lastSeen: this.now() };
+      room.players[playerId] = { name, secret, score: 0, ready: false, lastSeen: this.now() };
       await this.save();
-      return this.json({ ok: true, playerId, name });
+      return this.json({ ok: true, playerId, name, secret });
     }
 
     if (path === "/api/start-game") {
-      if (body.playerId !== room.hostPlayerId) return this.json({ ok: false, error: "only host can start" }, 403);
+      const me = this.authed(body);
+      if (!me) return this.json({ ok: false, error: "bad secret" }, 403);
+      if (me !== room.hostPlayerId) return this.json({ ok: false, error: "only host can start" }, 403);
       if (Object.keys(room.players).length < 2)
         return this.json({ ok: false, error: "need at least 2 players" }, 409);
       if (!this.everyoneReady())
@@ -685,8 +713,8 @@ export class RoomDO {
     }
 
     if (path === "/api/set-ready") {
-      const pid = body.playerId;
-      if (!room.players[pid]) return this.json({ ok: false, error: "not in room" }, 403);
+      const pid = this.authed(body);
+      if (!pid) return this.json({ ok: false, error: "bad secret" }, 403);
       room.players[pid].ready = !!body.ready;
       room.players[pid].lastSeen = this.now();
       await this.save();
@@ -703,10 +731,11 @@ export class RoomDO {
     }
 
     if (path === "/api/submit-answer") {
-      this.touch(body.playerId);
+      const playerId = this.authed(body);
+      if (!playerId) return this.json({ ok: false, error: "bad secret" }, 403);
+      this.touch(playerId);
       this.advancePhase();
-      const playerId = body.playerId;
-      if (room.phase === "playing" && room.players[playerId] && !room.answers[playerId]) {
+      if (room.phase === "playing" && !room.answers[playerId]) {
         const atMs = this.now() - room.phaseStartedAt;
         const correct = String(body.songId) === String(room.songIds[room.index]);
         room.answers[playerId] = { songId: body.songId, atMs, correct };
@@ -717,6 +746,7 @@ export class RoomDO {
     }
 
     if (path === "/api/return-to-lobby") {
+      if (!this.authed(body)) return this.json({ ok: false, error: "bad secret" }, 403);
       // 只有在上一局已經結束時才能重置房間。
       // 否則上一局卡在結算畫面的人按下「回到房間」，會把別人正在玩的這一局整個洗掉。
       if (room.phase !== "finished") {
@@ -737,8 +767,9 @@ export class RoomDO {
     }
 
     if (path === "/api/leave-room") {
-      const playerId = body.playerId;
-      if (room.players[playerId]) delete room.players[playerId];
+      const playerId = this.authed(body);
+      if (!playerId) return this.json({ ok: false, error: "bad secret" }, 403);
+      delete room.players[playerId];
       // 連他這一輪的作答一起清掉，否則「是不是大家都答完了」會多算一票
       delete room.answers[playerId];
       if (Object.keys(room.players).length === 0) {
@@ -752,8 +783,8 @@ export class RoomDO {
     }
 
     if (path === "/api/send-chat") {
-      const playerId = body.playerId;
-      if (!room.players[playerId]) return this.json({ ok: false, error: "not in room" }, 403);
+      const playerId = this.authed(body);
+      if (!playerId) return this.json({ ok: false, error: "bad secret" }, 403);
       let text = String(body.text || "").trim();
       if (text.length > 200) text = text.slice(0, 200);
       if (text.length > 0) {
