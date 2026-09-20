@@ -2841,8 +2841,11 @@ async function refreshProfileFromServer(){
     if(d && d.ok){
       // token 跟接回碼只有建檔／接回那一次才拿得到，這裡回來的沒有，不能整個蓋掉
       profile = Object.assign({}, profile, d.profile);
+      // 伺服器的統計不含「還沒送出去的場次」，直接採用會把它們抹掉
+      applyServerStats(d.profile.stats);
       saveLocalProfile();
       renderIdentity();
+      flushPendingResults();
       if(document.getElementById('screen-profile').classList.contains('active')) renderProfileScreen();
     }else if(d && d.error === 'no profile'){
       // 伺服器認得這個請求，但說「沒有這個人」。這跟連不上網路是完全不同的狀況：
@@ -2865,7 +2868,11 @@ async function syncPendingProfile(){
     renderIdentity();
     // 離線期間的成績一次補報成一場，場次會少算，但總答對數與答對率是對的。
     // 要完全還原就得在本機留每一場的明細，為了這個帶一份離線佇列不划算。
-    if(local.total > 0){
+    if(profile.pendingResults && profile.pendingResults.length){
+      // 有逐場的佇列就照場數送，比彙總精確，場次也不會少算
+      await flushPendingResults();
+    }else if(local.total > 0){
+      // 沒有佇列的舊檔案才走彙總這條路
       await profileApi('/api/profile/stats', {
         playerId: profile.id, token: profile.token,
         correct: Math.min(local.correct, 200), total: Math.min(local.total, 200),
@@ -2876,18 +2883,103 @@ async function syncPendingProfile(){
 }
 
 // 一場遊戲打完呼叫。伺服器只收單場結果自己累加，所以這裡不送總數。
+// 還沒成功送到伺服器的場次。留著它才能重送 ——
+// 原本送失敗就當沒發生，本機多出來的數字會在下次同步被伺服器蓋掉。
+function pendingSum(){
+  const q = (profile && profile.pendingResults) || [];
+  return q.reduce((a, x) => ({
+    games: a.games + 1,
+    correct: a.correct + x.correct,
+    total: a.total + x.total,
+  }), { games:0, correct:0, total:0 });
+}
+
+// 畫面上的數字 = 伺服器的數字 + 還沒送出去的場次。
+// 少了後面那一項，每次同步都會把還沒送成功的成績抹掉。
+function applyServerStats(serverStats){
+  const inc = pendingSum();
+  const s = Object.assign({}, serverStats || {});
+  s.games   = (serverStats && serverStats.games   || 0) + inc.games;
+  s.correct = (serverStats && serverStats.correct || 0) + inc.correct;
+  s.total   = (serverStats && serverStats.total   || 0) + inc.total;
+  profile.stats = s;
+}
+
+let flushingResults = false;
+async function flushPendingResults(){
+  if(flushingResults) return;
+  if(!profile || !profile.token) return;
+  if(!profile.pendingResults || !profile.pendingResults.length) return;
+
+  flushingResults = true;
+  try{
+    while(profile.pendingResults.length){
+      const item = profile.pendingResults[0];
+      let d;
+      try{
+        d = await profileApi('/api/profile/stats', {
+          playerId: profile.id, token: profile.token,
+          correct: item.correct, total: item.total, resultId: item.id,
+        });
+      }catch(e){
+        break; // 網路問題，留著下次再送
+      }
+      // 伺服器說這筆本身有問題（例如數字不合理），再送幾次也不會過，
+      // 丟掉免得整個佇列被它卡死，後面正常的場次也送不出去。
+      if(d && !d.ok && d.error === 'bad result'){ profile.pendingResults.shift(); continue; }
+      if(!d || !d.ok) break;
+
+      profile.pendingResults.shift();
+      applyServerStats(d.profile.stats);
+      saveLocalProfile();
+    }
+  }finally{
+    flushingResults = false;
+  }
+  renderIdentity();
+  if(document.getElementById('screen-profile').classList.contains('active')) renderProfileScreen();
+
+  // 還有沒送完的就排一次重試。少了這個，網路恢復時沒有任何東西會觸發上傳，
+  // 成績會一直卡在佇列裡等到下次開遊戲。
+  scheduleResultRetry();
+}
+
+let resultRetryTimer = null;
+function scheduleResultRetry(){
+  if(resultRetryTimer) return;
+  if(!profile || !profile.pendingResults || !profile.pendingResults.length) return;
+  resultRetryTimer = setTimeout(()=>{
+    resultRetryTimer = null;
+    flushPendingResults();
+  }, 30000);
+}
+
+// 網路回來、或使用者切回這個分頁時，立刻試一次，不用等計時器
+window.addEventListener('online', ()=> flushPendingResults());
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') flushPendingResults();
+});
+
+// 一場遊戲打完呼叫。伺服器只收單場結果自己累加，所以這裡不送總數。
 async function recordGameResult(correct, total){
   if(!profile || !total) return;
+  if(!profile.pendingResults) profile.pendingResults = [];
+  // 每一場一個編號，重送時伺服器才認得出「這筆我收過了」
+  profile.pendingResults.push({
+    correct, total,
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
+  });
+  // 離線玩很久的極端情況，留最近這些就好，不要無限長大撐爆 localStorage
+  if(profile.pendingResults.length > 50){
+    profile.pendingResults = profile.pendingResults.slice(-50);
+  }
+
+  // 先反映在畫面上，打完立刻看得到；正確的數字等送出去之後會重新算
   const s = profile.stats || (profile.stats = { games:0, correct:0, total:0, timedBest:{} });
   s.games += 1; s.correct += correct; s.total += total;
   saveLocalProfile();
-  if(!profile.token) return; // 還沒註冊成功的檔案，等 syncPendingProfile 一起補
-  try{
-    const d = await profileApi('/api/profile/stats', {
-      playerId: profile.id, token: profile.token, correct, total,
-    });
-    if(d && d.ok){ profile.stats = d.profile.stats; saveLocalProfile(); }
-  }catch(e){ /* 送不出去就先算在本機頭上 */ }
+
+  flushPendingResults();
 }
 
 /* ---------- 開場 ---------- */
@@ -2902,6 +2994,7 @@ async function recordGameResult(correct, total){
     showScreen('screen-era');
     refreshProfileFromServer();
     syncPendingProfile();
+    flushPendingResults();
   }
   // 版本檢查跟有沒有檔案無關，一律要跑
   checkForUpdate();
@@ -3559,7 +3652,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1255';
+const APP_VERSION = '2026-09-20-1303';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

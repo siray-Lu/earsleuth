@@ -982,6 +982,23 @@ export class PlayerDO {
       if (total < 0 || total > 200 || correct < 0 || correct > total) {
         return json({ ok: false, error: "bad result" }, 400);
       }
+
+      // 同一場只能算一次。前端送不出去時會重試，而「請求其實成功了、
+      // 只是回應掉在路上」這種狀況重試就會重複計算。帶著單場編號來，
+      // 認過的就直接回現況，不要再加一次。
+      const resultId = body.resultId && String(body.resultId).slice(0, 40);
+      if (resultId) {
+        if (!Array.isArray(profile.recentResultIds)) profile.recentResultIds = [];
+        if (profile.recentResultIds.includes(resultId)) {
+          return json({ ok: true, duplicate: true, profile: publicProfile(profile) });
+        }
+        profile.recentResultIds.push(resultId);
+        // 只記最近這些就夠了 —— 重試都發生在短時間內，記太多只是白佔空間
+        if (profile.recentResultIds.length > 50) {
+          profile.recentResultIds = profile.recentResultIds.slice(-50);
+        }
+      }
+
       profile.stats.games += 1;
       profile.stats.correct += correct;
       profile.stats.total += total;
@@ -1230,9 +1247,9 @@ export class LiveDO {
     this.state = state;
     this.env = env;
     this.s = null;
-    // 每回合結算完要回報給玩家檔案與長期榜單，先在這裡排隊，
-    // 等回應送出之後再用 waitUntil 慢慢送，不要讓玩家等我們寫統計。
-    this.pending = [];
+    // 正在送的旗標。佇列本身存在持久化狀態裡（this.s.pending），
+    // 放記憶體的話 Durable Object 被回收就整個不見了。
+    this.flushing = false;
     this.state.blockConcurrencyWhile(async () => {
       this.s = (await this.state.storage.get("live")) || null;
     });
@@ -1255,6 +1272,7 @@ export class LiveDO {
       players: {},
       answers: {},
       lastResults: [],
+      pending: [],
     };
   }
 
@@ -1333,6 +1351,7 @@ export class LiveDO {
   settle() {
     const s = this.s;
     if (!s.q) return;
+    if (!Array.isArray(s.pending)) s.pending = [];
     const results = [];
     for (const pid of Object.keys(s.players)) {
       const p = s.players[pid];
@@ -1348,12 +1367,12 @@ export class LiveDO {
         p.best = Math.max(p.best || 0, gained);
         results.push({ playerId: pid, nick: p.nick, avatar: p.avatar, correct: true, ms: a.ms, gained });
         // 只有真的有得分才回報。全部都報的話，一整排掛著發呆的人
-        // 每 22 秒就會產生一輪無意義的寫入。
-        this.pending.push({ playerId: pid, gained, streak: p.streak, correct: true });
+        // 每一回合就會產生一輪無意義的寫入。
+        s.pending.push({ playerId: pid, gained, streak: p.streak, correct: true });
       } else {
         p.streak = 0;
         results.push({ playerId: pid, nick: p.nick, avatar: p.avatar, correct: false, ms: a ? a.ms : null, gained: 0 });
-        if (a) this.pending.push({ playerId: pid, gained: 0, streak: 0, correct: false });
+        if (a) s.pending.push({ playerId: pid, gained: 0, streak: 0, correct: false });
       }
     }
     // 答對的排前面、快的排前面，這樣揭曉時第一行就是本回合最快的人
@@ -1365,24 +1384,39 @@ export class LiveDO {
   // 免費方案一個請求最多 50 個 subrequest，所以一次只處理固定筆數，
   // 剩下的留到下一次輪詢再送 —— 寧可統計慢幾秒，也不要把額度用光害正常請求失敗。
   async flushReports() {
-    const batch = this.pending.splice(0, 8);
-    for (const r of batch) {
-      try {
-        const pStub = this.env.PLAYERS.get(this.env.PLAYERS.idFromName("player:" + r.playerId));
-        const res = await pStub.fetch("https://do/internal/live-result", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(r),
-        });
-        const d = await res.json().catch(() => ({ ok: false }));
-        if (!d.ok) continue;
+    // 同時只跑一份。waitUntil 是每個請求都會排一次的，不擋的話
+    // 人多時會有好幾份同時在送同一批，分數就會被重複累加。
+    if (this.flushing) return;
+    this.flushing = true;
+    try {
+      // 一次最多處理這些筆。免費方案一個請求最多 50 個 subrequest，
+      // 一筆最多會用掉 3 個，剩下的留到下一次輪詢再送。
+      for (let n = 0; n < 8; n++) {
+        const s = this.s;
+        if (!s || !Array.isArray(s.pending) || !s.pending.length) break;
+        const r = s.pending[0];
+        try {
+          const pStub = this.env.PLAYERS.get(this.env.PLAYERS.idFromName("player:" + r.playerId));
+          const res = await pStub.fetch("https://do/internal/live-result", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(r),
+          });
+          const d = await res.json().catch(() => ({ ok: false }));
+          if (!d.ok) break; // 對方有問題就先停，這一筆留著下次再送
 
-        // 總分只有得分時才需要重寫；連對紀錄只有破自己紀錄時才動榜
-        if (r.gained > 0) await this.submitLiveBoard("live_total", r.playerId, d.profile, d.live.total);
-        if (d.streakImproved) await this.submitLiveBoard("live_streak", r.playerId, d.profile, d.live.bestStreak);
-      } catch (e) {
-        // 統計寫失敗不該影響比賽本身，這一筆丟掉就算了
+          // 總分只有得分時才需要重寫；連對紀錄只有破自己紀錄時才動榜
+          if (r.gained > 0) await this.submitLiveBoard("live_total", r.playerId, d.profile, d.live.total);
+          if (d.streakImproved) await this.submitLiveBoard("live_streak", r.playerId, d.profile, d.live.bestStreak);
+        } catch (e) {
+          break; // 網路或下游出錯，留著下次再送，不要把這一筆丟掉
+        }
+        // 確定送成功才移除。先移除再送的話，失敗那一筆就永遠消失了。
+        s.pending.shift();
+        await this.save();
       }
+    } finally {
+      this.flushing = false;
     }
   }
 
@@ -1470,7 +1504,9 @@ export class LiveDO {
     this.advance();
 
     // 回應先送出去，統計在背景慢慢寫。玩家不該為了我們更新排行榜而多等一輪。
-    if (this.pending.length) this.state.waitUntil(this.flushReports());
+    if (this.s && Array.isArray(this.s.pending) && this.s.pending.length) {
+      this.state.waitUntil(this.flushReports());
+    }
 
     if (path === "/live/join") {
       if (!this.s.players[pid]) {

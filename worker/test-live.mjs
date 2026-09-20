@@ -145,3 +145,54 @@ const ghost = await call("/live/state", { playerId: "p1" });
 結果["⑭幽靈玩家清除"] = { 在線人數: ghost.online, 說明: "p2 早就沒輪詢，應只剩 p1" };
 
 console.log(JSON.stringify(結果, null, 2));
+
+/* ---------- 回報失敗時，那一筆不能消失 ----------
+   這一段是為了守住一個具體的修正：原本是「先從佇列拿走再嘗試送」，
+   送失敗那一筆就直接蒸發了，玩家的分數憑空不見。 */
+
+let 下游正常 = false;
+stubEnv.PLAYERS.get = (name) => ({
+  fetch: async (url, init) => {
+    if (!下游正常) throw new Error("下游掛了");
+    const body = JSON.parse(init.body);
+    const st = 假玩家檔案[name] || (假玩家檔案[name] = { total: 0, bestStreak: 0, rounds: 0, correct: 0 });
+    st.total += body.gained;
+    st.rounds += 1;
+    const streakImproved = body.streak > st.bestStreak;
+    if (streakImproved) st.bestStreak = body.streak;
+    return new Response(JSON.stringify({
+      ok: true, live: st, streakImproved,
+      profile: { nick: name, avatar: { emoji: "🎤", color: "#ff5fa2" } },
+    }));
+  },
+});
+
+// 再打一回合，但回報的下游是壞的
+假時間 += 3100; await call("/live/state", { playerId: "p1" });
+假時間 += 2100; await call("/live/state", { playerId: "p1" });
+await call("/live/answer", { playerId: "p1", roundNo: live.s.roundNo, pos: live.s.q.answerPos });
+假時間 += 10100; await call("/live/state", { playerId: "p1" });
+await Promise.all(背景工作.splice(0));
+
+const 壞掉時佇列長度 = live.s.pending.length;
+const 壞掉時的總分 = 假玩家檔案["player:p1"].total;
+
+// 下游修好，再輪詢一次觸發補送
+下游正常 = true;
+假時間 += 1000;
+await call("/live/state", { playerId: "p1" });
+await Promise.all(背景工作.splice(0));
+
+console.log(JSON.stringify({
+  "⑮回報失敗時": {
+    佇列有保住: 壞掉時佇列長度 > 0,
+    佇列筆數: 壞掉時佇列長度,
+    說明: "先移除再送的舊寫法這裡會是 0，那一筆就永遠消失了",
+  },
+  "⑯下游修好後補送": {
+    佇列已清空: live.s.pending.length === 0,
+    總分有補上: 假玩家檔案["player:p1"].total > 壞掉時的總分,
+    補送前: 壞掉時的總分,
+    補送後: 假玩家檔案["player:p1"].total,
+  },
+}, null, 2));
