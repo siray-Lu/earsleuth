@@ -1482,13 +1482,21 @@ function stopTimedTimer(){
   if(timedTimerInterval){ clearInterval(timedTimerInterval); timedTimerInterval = null; }
 }
 function timedRecordKey(count){ return 'timedBest_' + selectedEra + '_' + count; }
+// 這兩支一定要包 try/catch。瀏覽器擋掉儲存空間時（Safari 無痕、關掉 cookie 的設定）
+// localStorage 不是回傳 null，而是直接拋錯 —— 而「⏱️ 計時挑戰」的處理函式會先讀
+// 四筆最佳紀錄才切畫面，一拋錯整個切畫面就不會執行，按鈕看起來完全沒反應。
 function getTimedBest(count){
-  const v = Number(localStorage.getItem(timedRecordKey(count)));
-  return (v && v > 0) ? v : null;
+  try{
+    const v = Number(localStorage.getItem(timedRecordKey(count)));
+    return (v && v > 0) ? v : null;
+  }catch(e){ return null; }
 }
 function saveTimedBest(count, ms){
   const cur = getTimedBest(count);
-  if(!cur || ms < cur){ localStorage.setItem(timedRecordKey(count), String(ms)); return true; }
+  if(!cur || ms < cur){
+    try{ localStorage.setItem(timedRecordKey(count), String(ms)); }catch(e){}
+    return true; // 存不存得起來是另一回事，破紀錄這件事本身還是成立的
+  }
   return false;
 }
 function formatDuration(ms){
@@ -3652,7 +3660,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1303';
+const APP_VERSION = '2026-09-20-1308';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

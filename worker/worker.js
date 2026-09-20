@@ -48,8 +48,7 @@ function randCode() {
 // 前端的 maxlength="10" 只是裝飾 —— 直接打 API 就繞過了，
 // 不夾的話有人可以送一個幾 MB 的名字，塞爆房間狀態並廣播給所有人。
 function cleanRoomName(raw, fallback) {
-  const s = String(raw == null ? "" : raw).replace(/\s+/g, " ").trim();
-  return s ? s.slice(0, 10) : fallback;
+  return cleanText(raw, 10) || fallback;
 }
 
 /* ---------- 個人檔案用的小工具 ---------- */
@@ -88,10 +87,31 @@ function normalizeRecoveryCode(raw) {
   return s.slice(0, 4) + "-" + s.slice(4);
 }
 
+// 看不見或會搞亂版面的字元一律拿掉：
+//   控制字元        —— 會弄髒日誌與終端輸出
+//   零寬空格 200B   —— 可以做出「完全看不見」的名字
+//   雙向控制碼      —— 202A~202E、2066~2069 會把它後面的畫面文字順序整個翻過來，
+//                      一個人就能把整張排行榜看起來弄亂
+// 刻意不碰 200C（ZWNJ）與 200D（ZWJ）：前者是波斯語等文字的正常用字，
+// 後者是 emoji 組合用的（👨‍👩‍👦 少了它就會散成三個人），拿掉會破壞正常內容。
+const INVISIBLE_CHARS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g;
+
+function cleanText(raw, maxChars) {
+  let s = String(raw == null ? "" : raw).replace(INVISIBLE_CHARS, "");
+  s = s.replace(/\s+/g, " ").trim();
+
+  // 一定要用碼點切，不能直接 slice —— emoji 佔兩個 UTF-16 單位，
+  // 切在中間會產生半個字元，顯示成問號方塊。
+  const cps = Array.from(s);
+  if (cps.length > maxChars) s = cps.slice(0, maxChars).join("");
+
+  // 只剩下組合用的不可見字元（例如整串都是 ZWJ）也算空白
+  if (!s.replace(/[\u200C\u200D\uFE00-\uFE0F]/g, "").trim()) return "";
+  return s;
+}
+
 function cleanNick(raw) {
-  let s = String(raw == null ? "" : raw).replace(/\s+/g, " ").trim();
-  if (s.length > 10) s = s.slice(0, 10);
-  return s || "無名氏";
+  return cleanText(raw, 10) || "無名氏";
 }
 
 function cleanAvatar(raw) {
@@ -848,8 +868,8 @@ export class RoomDO {
     if (path === "/api/send-chat") {
       const playerId = this.authed(body);
       if (!playerId) return this.json({ ok: false, error: "bad secret" }, 403);
-      let text = String(body.text || "").trim();
-      if (text.length > 200) text = text.slice(0, 200);
+      // 聊天訊息一樣會出現在別人畫面上，同樣要擋掉看不見的字元與雙向控制碼
+      const text = cleanText(body.text, 200);
       if (text.length > 0) {
         room.chatSeq++;
         room.chat.push({ id: room.chatSeq, playerId, name: room.players[playerId].name, text, ts: this.now() });
