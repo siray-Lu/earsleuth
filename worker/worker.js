@@ -305,6 +305,34 @@ export default {
       return json(await res.json().catch(() => ({ ok: false, error: "bad upstream response" })), res.status);
     }
 
+    // ---------- 管理用 ----------
+    // 把某一筆成績從榜上移除。公開排行榜本來就需要這個 —— 有人灌不實成績時
+    // 總得有辦法拿掉，不然那一筆會永遠卡在第一名打擊真正的玩家。
+    // 需要 ADMIN_KEY，那是 Cloudflare 的 secret，不在程式碼裡也不會進版控
+    // （設定方式：wrangler secret put ADMIN_KEY）。
+    // 跟 /api/leaderboard/forget 不同：那支是玩家撤下自己的紀錄、要本人的 token，
+    // 這支是管理者移除別人的。
+    if (path === "/api/admin/board-remove" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      if (!env.ADMIN_KEY || body.key !== env.ADMIN_KEY) {
+        return json({ ok: false, error: "forbidden" }, 403);
+      }
+      // 計時挑戰的榜是 era_count，競速的兩張是 live_total / live_streak
+      const name = body.kind
+        ? "live_" + (body.kind === "streak" ? "streak" : "total")
+        : boardKey(body.era, body.count);
+      if (!name) return json({ ok: false, error: "bad board" }, 400);
+      if (!body.playerId) return json({ ok: false, error: "missing playerId" }, 400);
+
+      const stub = env.BOARDS.get(env.BOARDS.idFromName("lb:" + name));
+      const res = await stub.fetch("https://do/forget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: body.playerId }),
+      });
+      return json(await res.json().catch(() => ({ ok: false })), res.status);
+    }
+
     // ---------- 排行榜 ----------
     // 同樣要擺在通用 /api/ 轉送前面（排行榜沒有房號）
     if (path.startsWith("/api/leaderboard")) {
@@ -340,22 +368,17 @@ export default {
         const key = boardKey(body.era, body.count);
         if (!key) return json({ ok: false, error: "bad board" }, 400);
 
-        const count = Math.floor(Number(body.count));
-        const ms = Math.floor(Number(body.ms));
-        // 擋一下明顯不可能的成績。一題至少要聽、要想、要按，平均 0.8 秒內答完整輪不是人類。
-        // 這只擋得掉隨手亂送的數字；前端本來就不可信任，真要防得靠伺服器出題才行。
-        if (!(ms > count * 800) || ms > 3 * 3600 * 1000) {
-          return json({ ok: false, error: "implausible time" }, 400);
-        }
-
+        // 這裡刻意不看 body.ms。時間由玩家自己的 DO 依據開跑時的時間戳算出來，
+        // 前端連「我花了幾秒」這件事都沒有發言權。
         const pStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + body.playerId));
         const vRes = await pStub.fetch("https://do/api/profile/timed", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: body.token, boardKey: key, ms }),
+          body: JSON.stringify({ token: body.token, boardKey: key, runId: body.runId }),
         });
         const v = await vRes.json().catch(() => ({ ok: false, error: "bad upstream response" }));
         if (!v.ok) return json(v, vRes.status);
+        const ms = v.ms;
 
         // 榜單上存的是當下的暱稱與頭像。之後改名不會回頭改已經上榜的那一筆，
         // 但下次再破自己的紀錄時就會一起更新。
@@ -366,7 +389,7 @@ export default {
           body: JSON.stringify({ playerId: body.playerId, nick: v.profile.nick, avatar: v.profile.avatar, ms }),
         });
         const d = await res.json().catch(() => ({ ok: false, error: "bad upstream response" }));
-        return json(Object.assign({}, d, { isPersonalBest: v.isBest }), res.status);
+        return json(Object.assign({}, d, { isPersonalBest: v.isBest, ms }), res.status);
       }
 
       // 把自己從某張榜上撤下來。要帶 token，所以只動得了自己那一筆。
@@ -939,18 +962,64 @@ export class PlayerDO {
       return json({ ok: true, profile: publicProfile(profile) });
     }
 
+    // 計時挑戰開始。伺服器自己記下起跑時間 —— 秒數絕對不能讓前端自己報，
+    // 不然送一個請求就能宣稱 40 題用 32 秒跑完，整張排行榜變成榮譽制。
+    if (path === "/api/profile/timed-start") {
+      if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
+      if (!body.boardKey) return json({ ok: false, error: "bad board" }, 400);
+      // 題目由伺服器發。這不只是為了公平 —— 前端要拿到題目才能開始玩，
+      // 所以「發出題目的這一刻」就是無法造假的起跑點。
+      // 只做伺服器計時而讓前端自己出題的話，前端可以先玩完再來報到。
+      const era = ERAS.includes(body.era) ? body.era : "mixed";
+      const pool = SONGS.filter((s) => era === "mixed" || s.era === era);
+      const ids = pool.map((s) => s.id);
+      for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+      }
+      // 答錯不算進度，所以要備足題目；抽完了前端才會自己補。
+      const songIds = ids.slice(0, 300);
+
+      const runId = randomId(16);
+      profile.timedRun = {
+        runId,
+        boardKey: body.boardKey,
+        count: Math.floor(Number(body.count)) || 0,
+        startedAt: Date.now(),
+      };
+      await this.state.storage.put("profile", profile);
+      return json({ ok: true, runId, songIds });
+    }
+
+    // 計時挑戰結束。時間由伺服器兩個時間戳相減得出，前端送什麼秒數都不採信。
     if (path === "/api/profile/timed") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
-      const ms = Math.floor(Number(body.ms));
-      if (!(ms > 0)) return json({ ok: false, error: "bad time" }, 400);
+
+      const run = profile.timedRun;
+      if (!run || !body.runId || run.runId !== body.runId) {
+        return json({ ok: false, error: "no run" }, 409);
+      }
+      if (run.boardKey !== body.boardKey) {
+        return json({ ok: false, error: "run mismatch" }, 409);
+      }
+
+      const ms = Date.now() - run.startedAt;
+      // 一次有效。用完立刻作廢，否則同一場可以重複上傳，或是開一次跑很多次。
+      profile.timedRun = null;
+
+      // 就算時間是伺服器算的，還是要擋機器人：腳本可以真的跑完流程但每題只花
+      // 幾十毫秒。一題至少要聽、要想、要按，平均 0.8 秒以內不是人做得到的。
+      if (!(ms > run.count * 800) || ms > 3 * 3600 * 1000) {
+        await this.state.storage.put("profile", profile);
+        return json({ ok: false, error: "implausible time" }, 400);
+      }
+
       if (!profile.stats.timedBest) profile.stats.timedBest = {};
       const prev = profile.stats.timedBest[body.boardKey];
       const isBest = !prev || ms < prev;
-      if (isBest) {
-        profile.stats.timedBest[body.boardKey] = ms;
-        await this.state.storage.put("profile", profile);
-      }
-      return json({ ok: true, isBest, profile: publicProfile(profile) });
+      if (isBest) profile.stats.timedBest[body.boardKey] = ms;
+      await this.state.storage.put("profile", profile);
+      return json({ ok: true, isBest, ms, profile: publicProfile(profile) });
     }
 
     if (path === "/api/profile/update") {

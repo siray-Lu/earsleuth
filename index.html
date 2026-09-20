@@ -1513,7 +1513,21 @@ document.getElementById('go-timed-btn').addEventListener('click', ()=>{
 });
 document.getElementById('timed-back-btn').addEventListener('click', ()=> showScreen('screen-start'));
 document.querySelectorAll('#screen-timed-select [data-timed-count]').forEach(btn=>{
-  btn.addEventListener('click', ()=> startTimedGame(Number(btn.dataset.timedCount)));
+  // 現在要等伺服器發題才開得了局，中間有一小段空檔。
+  // 不給回饋的話玩家會以為按鈕壞了，然後連點好幾下開出好幾場。
+  btn.addEventListener('click', async ()=>{
+    const cards = document.querySelectorAll('#screen-timed-select [data-timed-count]');
+    const meta = btn.querySelector('.meta');
+    const 原本的說明 = meta ? meta.innerHTML : null;
+    cards.forEach(c => c.disabled = true);
+    if(meta) meta.textContent = '準備中…';
+    try{
+      await startTimedGame(Number(btn.dataset.timedCount));
+    }finally{
+      cards.forEach(c => c.disabled = false);
+      if(meta && 原本的說明 !== null) meta.innerHTML = 原本的說明;
+    }
+  });
 });
 
 // 計時挑戰的題目是「答對才算」，所以題數不固定（答錯會一直補新題目上來），
@@ -1526,13 +1540,19 @@ function nextTimedQuestion(){
   return { song: makeQuestionSong(song, TIMED_TIER), clipSeconds: TIER_CLIP_SECONDS[TIMED_TIER] };
 }
 
-function startTimedGame(count){
+async function startTimedGame(count){
   stopTimedTimer();
 
+  // 一定要等伺服器發題再開始。前端自己出題的話，就可以先玩完再去報到，
+  // 伺服器量到的時間會短得離譜 —— 那樣計時就等於沒有把關。
+  const 伺服器題庫 = await startTimedRun(selectedEra, count);
+
+  // 拿不到就照舊用本機出題（離線、還沒建檔、伺服器掛了都算），
+  // 這種情況下 timedRunId 是 null，交卷時不會上榜 —— 玩得到，但不列入排名。
   state = { diffKey:null, questions:[], index:0, score:0, answered:false, answers:[],
     isPlaying:false, clipElapsedMs:0, rafId:null, lastTickTs:0, countdownTimer:null,
     timedMode:true, timedCount:count, timedStartedAt:Date.now(), timedElapsedMs:0, timedIsNewRecord:false,
-    timedQueue: shuffle(eraPool()) };
+    timedQueue: 伺服器題庫 || shuffle(eraPool()) };
   state.questions.push(nextTimedQuestion());
 
   document.getElementById('hud-diff').textContent = `⏱️ 答對 ${count} 題`;
@@ -3053,6 +3073,31 @@ document.getElementById('lb-back-btn').addEventListener('click', ()=> showScreen
 
 // 計時挑戰完成時呼叫。成績照樣先存在本機（離線也看得到自己的最佳紀錄），
 // 能連上伺服器才會上榜。
+// 計時挑戰一開始就先跟伺服器報到，拿一張「這一場」的憑證。
+// 時間由伺服器從這一刻算到交卷，前端報的秒數不再有任何效力。
+async function startTimedRun(era, count){
+  timedRunId = null;
+  if(!profile || !profile.token) return null;
+  try{
+    const d = await profileApi('/api/profile/timed-start', {
+      playerId: profile.id, token: profile.token,
+      boardKey: era + '_' + count, era, count,
+    });
+    if(!d || !d.ok) return null;
+    timedRunId = d.runId;
+    // 把伺服器發的歌曲編號換成本機歌庫裡的歌。對不起來的（本機歌庫比較舊）
+    // 直接跳過，不要讓整場開不起來。
+    if(Array.isArray(d.songIds)){
+      const byId = new Map(SONGS.map(s => [s.id, s]));
+      const queue = d.songIds.map(id => byId.get(id)).filter(Boolean);
+      if(queue.length >= 20) return queue;
+    }
+    return null;
+  }catch(e){ return null; /* 拿不到就這場不上榜，但照樣能玩 */ }
+}
+
+let timedRunId = null;
+
 async function submitTimedScore(era, count, ms){
   const box = document.getElementById('result-rank');
   box.style.display = 'none';
@@ -3062,7 +3107,8 @@ async function submitTimedScore(era, count, ms){
     const res = await fetch(PROFILE_API + '/api/leaderboard/submit', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ playerId: profile.id, token: profile.token, era, count, ms }),
+      // 不送 ms 了 —— 伺服器自己算。送過去也不會被採信。
+      body: JSON.stringify({ playerId: profile.id, token: profile.token, era, count, runId: timedRunId }),
     });
     const d = await res.json();
     if(!d || !d.ok) return;
@@ -3506,7 +3552,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1241';
+const APP_VERSION = '2026-09-20-1250';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
