@@ -108,6 +108,97 @@ function boardKey(era, count) {
   if (!TIMED_COUNTS.includes(n)) return null;
   return era + "_" + n;
 }
+
+/* ---------- 從舊後端搬家 ---------- */
+
+// 2026-09-19 這個 Worker 從 sound-gap-detective-api 改名成 earsleuth-api。
+// Cloudflare 把改名當成全新的 Worker，舊的 Durable Object 資料完全接不回來，
+// 於是有人的檔案還留在那邊。這裡留一條路：拿著舊接回碼來接回時，
+// 我們自己去舊後端撈，撈到就整份搬過來。
+//
+// 舊後端關掉之後，把 wrangler.toml 裡的 LEGACY service binding 拿掉，整段就會自動失效。
+
+// 從別處匯入的統計不能照單全收 —— 萬一舊資料壞了或被動過手腳，
+// 直接寫進來就等於把髒資料帶進新後端，排行榜會被污染。
+function sanitizeStats(raw) {
+  const s = raw && typeof raw === "object" ? raw : {};
+  const num = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+  const out = {
+    games: num(s.games, 100000),
+    correct: num(s.correct, 1000000),
+    total: num(s.total, 1000000),
+    timedBest: {},
+  };
+  if (out.correct > out.total) out.correct = out.total;
+
+  // 計時挑戰的最佳紀錄只收認得的榜別
+  const tb = s.timedBest && typeof s.timedBest === "object" ? s.timedBest : {};
+  for (const era of ERAS) {
+    for (const count of TIMED_COUNTS) {
+      const key = era + "_" + count;
+      const ms = Math.floor(Number(tb[key]) || 0);
+      if (ms > count * 800 && ms < 3 * 3600 * 1000) out.timedBest[key] = ms;
+    }
+  }
+
+  const live = s.live && typeof s.live === "object" ? s.live : null;
+  if (live) {
+    out.live = {
+      total: num(live.total, 100000000),
+      bestStreak: num(live.bestStreak, 100000),
+      rounds: num(live.rounds, 1000000),
+      correct: num(live.correct, 1000000),
+    };
+    if (out.live.correct > out.live.rounds) out.live.correct = out.live.rounds;
+  }
+  return out;
+}
+
+// 拿接回碼去舊後端問，問到就搬過來。回傳的格式跟一般的 restore 一樣。
+async function migrateFromLegacy(env, rc) {
+  if (!env.LEGACY) return { ok: false, error: "not found" };
+
+  let legacy = null;
+  try {
+    const res = await env.LEGACY.fetch("https://legacy/api/profile/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recoveryCode: rc }),
+    });
+    legacy = await res.json();
+  } catch (e) {
+    // 舊後端連不上就當作沒這組碼，不要把使用者卡在這裡
+    console.error("legacy fetch threw:", String(e && e.message || e));
+    return { ok: false, error: "not found" };
+  }
+  if (!legacy || !legacy.ok || !legacy.profile || !legacy.profile.id) {
+    console.error("legacy said:", JSON.stringify(legacy));
+    return { ok: false, error: "not found" };
+  }
+
+  const playerId = legacy.profile.id;
+
+  // 先把接回碼的索引搶下來。搶不到代表已經有人搬過了，那就照一般流程走。
+  const idx = env.PLAYERS.get(env.PLAYERS.idFromName("rc:" + rc));
+  await idx.fetch("https://do/idx/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ playerId }),
+  });
+
+  const stub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + playerId));
+  const res = await stub.fetch("https://do/internal/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      profile: Object.assign({}, legacy.profile, {
+        recoveryCode: rc,
+        token: legacy.token,
+      }),
+    }),
+  });
+  return await res.json().catch(() => ({ ok: false, error: "import failed" }));
+}
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -181,8 +272,15 @@ export default {
         const idx = env.PLAYERS.get(env.PLAYERS.idFromName("rc:" + rc));
         const r = await idx.fetch("https://do/idx/lookup");
         const d = await r.json().catch(() => ({ ok: false }));
-        if (!d.ok) return json({ ok: false, error: "not found" }, 404);
-        playerId = d.playerId;
+        if (d.ok) {
+          playerId = d.playerId;
+        } else {
+          // 這個後端沒有這組碼，去舊後端撈撈看。撈到就整份搬過來，
+          // 使用者不需要知道發生過搬家這件事，輸入舊碼照樣接得回來。
+          const migrated = await migrateFromLegacy(env, rc);
+          if (!migrated.ok) return json({ ok: false, error: "not found" }, 404);
+          return json(migrated);
+        }
       }
 
       if (!playerId) return json({ ok: false, error: "missing playerId" }, 400);
@@ -702,6 +800,43 @@ export class PlayerDO {
       await this.state.storage.put("profile", profile);
       // 建檔這一次才會把 token 跟接回碼一起交出去，之後任何查詢都不會再送
       return json({ ok: true, profile: publicProfile(profile), token: profile.token, recoveryCode: profile.recoveryCode });
+    }
+
+    // 從舊後端搬過來的檔案。這個分支一定要放在下面「找不到檔案就回 404」之前，
+    // 因為搬家的當下這個 DO 本來就是空的。
+    // 跟 /internal/live-result 一樣，只有 Worker 內部叫得到，對外沒有路徑打得進來。
+    if (path === "/internal/import") {
+      const existing = await this.state.storage.get("profile");
+      // 已經搬過就直接把現有的交出去，不要覆蓋 —— 重複搬會把搬家之後的新進度洗掉
+      if (existing) {
+        return json({
+          ok: true, migrated: false,
+          profile: publicProfile(existing),
+          token: existing.token,
+          recoveryCode: existing.recoveryCode,
+        });
+      }
+
+      const inc = body.profile || {};
+      if (!inc.id || !inc.recoveryCode) return json({ ok: false, error: "bad import" }, 400);
+
+      const imported = {
+        id: inc.id,
+        nick: cleanNick(inc.nick),
+        avatar: cleanAvatar(inc.avatar),
+        recoveryCode: inc.recoveryCode,
+        // token 沿用舊的，這樣舊裝置上已經存著的那組 token 搬完還能繼續用
+        token: inc.token || randomId(32),
+        createdAt: inc.createdAt || Date.now(),
+        stats: sanitizeStats(inc.stats),
+      };
+      await this.state.storage.put("profile", imported);
+      return json({
+        ok: true, migrated: true,
+        profile: publicProfile(imported),
+        token: imported.token,
+        recoveryCode: imported.recoveryCode,
+      });
     }
 
     const profile = await this.state.storage.get("profile");
