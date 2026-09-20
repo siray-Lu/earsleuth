@@ -2682,6 +2682,13 @@ document.getElementById('setup-create-btn').addEventListener('click', async ()=>
   const avatar = { emoji: setupDraft.emoji, color: setupDraft.color };
   try{
     const d = await profileApi('/api/profile/create', { nick, avatar });
+    // 被頻率限制擋下不是「連不上」，不能落到下面的離線模式 ——
+    // 那樣會建一份永遠同步不上去的本機檔案，玩家還不知道為什麼。
+    if(d && !d.ok && d.error === 'too many profiles'){
+      err.textContent = '這個網路位址剛剛建立太多檔案了，請過一小時再試（或換個網路）';
+      btn.disabled = false; btn.textContent = '建立檔案，開始玩';
+      return;
+    }
     if(!d || !d.ok) throw new Error((d && d.error) || 'create failed');
     profile = Object.assign({}, d.profile, { token: d.token, recoveryCode: d.recoveryCode, pendingSync: false });
   }catch(e){
@@ -3552,7 +3559,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1250';
+const APP_VERSION = '2026-09-20-1255';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

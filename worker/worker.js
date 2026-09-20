@@ -13,6 +13,16 @@ const MAX_PLAYERS = 8;
 // 抓太短會把還在玩、只是切到別的分頁的人踢掉。
 const GHOST_MS = 60000;
 
+// 一局最多幾題。最難的魔王模式是 8 題、隨機模式 4~8 題，抓 50 已經非常寬鬆。
+// 不設限的話，房主可以送 20 萬題進來（實測過）把房間的儲存空間灌爆。
+const MAX_QUESTIONS = 50;
+
+// 同一個 IP 一小時最多建幾份個人檔案 / 幾間房。
+// 每一份檔案、每一間房都是一個 Durable Object，不擋的話一支腳本就能把免費額度打爆。
+// 抓這個數字是為了讓「一家人共用同一個對外 IP」還是夠用。
+const CREATE_PROFILE_PER_HOUR = 20;
+const CREATE_ROOM_PER_HOUR = 40;
+
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
@@ -119,6 +129,24 @@ function boardKey(era, count) {
   return era + "_" + n;
 }
 
+// 回傳 true 代表「還在額度內、可以放行」。
+// 計數器本身壞掉時一律放行 —— 寧可少擋一些，也不要因為附屬機制故障就讓人玩不了。
+async function withinRate(env, request, bucket, limit) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  try {
+    const stub = env.PLAYERS.get(env.PLAYERS.idFromName("ip:" + bucket + ":" + ip));
+    const res = await stub.fetch("https://do/idx/rate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit }),
+    });
+    const d = await res.json();
+    return d && d.ok !== false;
+  } catch (e) {
+    return true;
+  }
+}
+
 /* ---------- 從舊後端搬家 ---------- */
 
 // 2026-09-19 這個 Worker 從 sound-gap-detective-api 改名成 earsleuth-api。
@@ -221,6 +249,9 @@ export default {
     }
 
     if (path === "/api/create-room" && request.method === "POST") {
+      if (!(await withinRate(env, request, "room", CREATE_ROOM_PER_HOUR))) {
+        return json({ ok: false, error: "too many rooms" }, 429);
+      }
       const body = await request.json().catch(() => ({}));
       // 隨機挑一個 4 位數房號；萬一撞到別的還在跑的房間（機率很低）就重試
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -252,6 +283,9 @@ export default {
       // 建檔：先搶一組沒人用過的接回碼，搶到了才真的把玩家檔案寫下去。
       // 順序反過來的話，接回碼萬一撞號就會有兩個人指到同一份檔案。
       if (path === "/api/profile/create" && request.method === "POST") {
+        if (!(await withinRate(env, request, "profile", CREATE_PROFILE_PER_HOUR))) {
+          return json({ ok: false, error: "too many profiles" }, 429);
+        }
         const playerId = randomId(12);
         let recoveryCode = null;
         for (let attempt = 0; attempt < 5; attempt++) {
@@ -726,9 +760,13 @@ export class RoomDO {
         return this.json(this.publicState());
       }
       room.diffKey = body.diffKey;
-      room.songIds = Array.isArray(body.songIds) ? body.songIds : [];
-      room.clipSeconds = Array.isArray(body.clipSeconds) ? body.clipSeconds : [];
-      room.starts = Array.isArray(body.starts) ? body.starts : [];
+      // 只收前 MAX_QUESTIONS 題，而且一律轉成數字。
+      // 原本是整包存下來，型別也不檢查 —— 送什麼進來就存什麼。
+      const takeNums = (arr) =>
+        (Array.isArray(arr) ? arr : []).slice(0, MAX_QUESTIONS).map((v) => Math.floor(Number(v)) || 0);
+      room.songIds = takeNums(body.songIds);
+      room.clipSeconds = takeNums(body.clipSeconds);
+      room.starts = takeNums(body.starts);
       room.index = 0;
       room.phase = "countdown";
       room.phaseStartedAt = this.now();
@@ -849,6 +887,21 @@ export class PlayerDO {
       await this.state.storage.put("owner", body.playerId);
       return json({ ok: true });
     }
+    // 頻率計數器。借用 PlayerDO 這個 class，用 "ip:<位址>" 當 key，
+    // 跟玩家檔案（"player:<id>"）、接回碼索引（"rc:<碼>"）各走各的命名空間。
+    if (path === "/idx/rate") {
+      const now = Date.now();
+      const windowMs = 60 * 60 * 1000;
+      const limit = Math.max(1, Math.min(10000, Math.floor(Number(body.limit)) || 20));
+      let rec = (await this.state.storage.get("rate")) || { count: 0, windowStart: 0 };
+      // 整點式的視窗：過了一小時就重新計數。比滑動視窗粗糙，
+      // 但不需要存每一次請求的時間戳，對這個規模夠用了。
+      if (now - rec.windowStart > windowMs) rec = { count: 0, windowStart: now };
+      rec.count += 1;
+      await this.state.storage.put("rate", rec);
+      return json({ ok: rec.count <= limit, count: rec.count, limit });
+    }
+
     if (path === "/idx/lookup") {
       const owner = await this.state.storage.get("owner");
       return owner ? json({ ok: true, playerId: owner }) : json({ ok: false, error: "not found" }, 404);
