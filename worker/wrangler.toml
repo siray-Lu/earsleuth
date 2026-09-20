@@ -45,10 +45,3 @@ class_name = "LiveDO"
 [[migrations]]
 tag = "v4"
 new_sqlite_classes = ["LiveDO"]
-
-# 舊後端（改名前的 Worker）。同帳號的 Worker 之間不能直接用 fetch() 互打，
-# 會被擋下來回 error code 1042，一定要走 service binding。
-# 等所有人都搬完、舊 Worker 停用之後，這段連同 LEGACY_API 一起刪掉。
-[[services]]
-binding = "LEGACY"
-service = "sound-gap-detective-api"

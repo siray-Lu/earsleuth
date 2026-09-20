@@ -2492,10 +2492,22 @@ function mpShowFinal(d){
   ranked.forEach((p, i)=>{
     const row = document.createElement('div');
     row.className = 'result-row' + (p.id === mp.playerId ? ' correct' : '');
-    row.innerHTML = `
-      <div><div class="rt">第 ${rankOf[i]} 名　${p.name}${p.id===mp.playerId ? '（你）' : ''}</div></div>
-      <div class="mark">${p.score} 分</div>
-    `;
+
+    // 這裡一定要用 textContent 組。玩家的名字是別人送進來的字串，
+    // 串進 innerHTML 的話，取名叫 <img src=x onerror=...> 的人就能在
+    // 同房間每個人的瀏覽器上執行程式。
+    const left = document.createElement('div');
+    const rt = document.createElement('div');
+    rt.className = 'rt';
+    rt.textContent = '第 ' + rankOf[i] + ' 名　' + p.name + (p.id === mp.playerId ? '（你）' : '');
+    left.appendChild(rt);
+
+    const mark = document.createElement('div');
+    mark.className = 'mark';
+    mark.textContent = p.score + ' 分';
+
+    row.appendChild(left);
+    row.appendChild(mark);
     list.appendChild(row);
   });
 }
@@ -3186,7 +3198,9 @@ function leaveLive(){
   liveStopAudio();
   if(live.joined && profile){
     // 走的時候通知一聲，這樣別人的名單會立刻少一個，不用等 90 秒逾時
-    liveApi('/api/live/leave', { playerId: profile.id }).catch(()=>{});
+    // 離場也要帶 token，伺服器現在會驗 —— 不驗的話任何人知道你的 playerId
+    // 就能把你踢出比賽，當場的分數直接歸零
+    liveApi('/api/live/leave', { playerId: profile.id, token: profile.token }).catch(()=>{});
   }
   live.joined = false;
   showScreen('screen-era');
@@ -3321,14 +3335,43 @@ async function onLiveChoose(pos){
     b.disabled = true;
     if(Number(b.dataset.pos) === pos) b.style.borderColor = 'var(--accent2)';
   });
-  document.getElementById('live-hint').textContent = '已送出，等揭曉…';
+  const 這回合 = live.roundNo;
+  document.getElementById('live-hint').textContent = '送出中…';
 
+  // 伺服器確認收到才敢說「已送出」。先前是送出前就改文字、而且完全不看回應，
+  // 結果網路一掉或伺服器拒收，畫面照樣顯示已作答，玩家要等到揭曉看到 ✘
+  // 才知道自己根本沒答到 —— 而那時已經來不及補救了。
+  let ok = false;
+  let 原因 = '';
   try{
-    await liveApi('/api/live/answer', {
+    const d = await liveApi('/api/live/answer', {
       playerId: profile.id, token: profile.token,
-      roundNo: live.roundNo, pos,
+      roundNo: 這回合, pos,
     });
-  }catch(e){ /* 送不出去就當沒答到，揭曉時自然會是錯的 */ }
+    ok = !!(d && d.ok);
+    if(!ok) 原因 = (d && d.error === 'already answered') ? '這回合已經答過了'
+                 : (d && d.error === 'stale round')     ? '慢了一步，這題已經結束'
+                 : (d && d.error === 'not answering')   ? '不在作答時間內'
+                 : '伺服器沒有收下這個答案';
+  }catch(e){ 原因 = '送不出去，請檢查網路'; }
+
+  // 換回合之後才回來的結果不要覆蓋畫面，不然會蓋掉下一題的提示
+  if(live.roundNo !== 這回合) return;
+
+  if(ok){
+    document.getElementById('live-hint').textContent = '已送出，等揭曉…';
+    return;
+  }
+
+  document.getElementById('live-hint').textContent = '⚠️ ' + 原因;
+  // 真的沒送到就把作答權還給玩家，還在作答階段的話可以再按一次
+  if(原因 !== '這回合已經答過了' && live.phase === 'play'){
+    live.answeredRound = 0;
+    document.querySelectorAll('#live-choices .choice-btn').forEach(b=>{
+      b.disabled = false;
+      b.style.borderColor = '';
+    });
+  }
 }
 
 function renderLiveReveal(d, 換階段){
@@ -3447,7 +3490,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-19-1459';
+const APP_VERSION = '2026-09-20-1225';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

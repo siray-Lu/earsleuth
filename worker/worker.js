@@ -32,6 +32,14 @@ function randCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+// 房間裡的名字是其他玩家會看到的東西，長度一定要在伺服器這邊夾死。
+// 前端的 maxlength="10" 只是裝飾 —— 直接打 API 就繞過了，
+// 不夾的話有人可以送一個幾 MB 的名字，塞爆房間狀態並廣播給所有人。
+function cleanRoomName(raw, fallback) {
+  const s = String(raw == null ? "" : raw).replace(/\s+/g, " ").trim();
+  return s ? s.slice(0, 10) : fallback;
+}
+
 /* ---------- 個人檔案用的小工具 ---------- */
 
 // 頭像不接受自由輸入，只能從這兩張表挑，前端的表要跟這裡一模一樣。
@@ -116,7 +124,9 @@ function boardKey(era, count) {
 // 於是有人的檔案還留在那邊。這裡留一條路：拿著舊接回碼來接回時，
 // 我們自己去舊後端撈，撈到就整份搬過來。
 //
-// 舊後端關掉之後，把 wrangler.toml 裡的 LEGACY service binding 拿掉，整段就會自動失效。
+// 2026-09-20 舊後端已經停用，wrangler.toml 裡的 LEGACY service binding 也拿掉了，
+// 所以 env.LEGACY 不存在、這段自動失效。程式留著是因為哪天再搬一次就用得上 ——
+// 把 binding 加回去就會重新運作。注意同帳號的 Worker 不能直接 fetch，一定要走 binding。
 
 // 從別處匯入的統計不能照單全收 —— 萬一舊資料壞了或被動過手腳，
 // 直接寫進來就等於把髒資料帶進新後端，排行榜會被污染。
@@ -390,11 +400,13 @@ export default {
       const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
       if (!body.playerId) return json({ ok: false, error: "missing playerId" }, 400);
 
-      // 進場與作答都要驗身分。不驗的話，知道別人 playerId 就能替他送出錯誤答案。
+      // 進場、作答、離場都要驗身分。playerId 會出現在即時排行榜的資料裡，
+      // 任何同場玩家都拿得到 —— 不驗的話，知道 id 就能替別人送錯答案，
+      // 或是直接把他踢出比賽讓分數歸零。
       // 查詢狀態不驗，那隻是唯讀的。
       let nick = null;
       let avatar = null;
-      if (path === "/api/live/join" || path === "/api/live/answer") {
+      if (path === "/api/live/join" || path === "/api/live/answer" || path === "/api/live/leave") {
         const pStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + body.playerId));
         const vRes = await pStub.fetch("https://do/api/profile/verify", {
           method: "POST",
@@ -603,7 +615,7 @@ export class RoomDO {
     if (path === "/init") {
       if (this.room) return this.json({ ok: false, error: "exists" });
       const playerId = this.newPlayerId();
-      const name = (body.name && String(body.name).trim()) || "Player1";
+      const name = cleanRoomName(body.name, "Player1");
       this.room = {
         code: body.code,
         hostPlayerId: playerId,
@@ -634,7 +646,7 @@ export class RoomDO {
       // 不要再開一個新的，否則名單上會出現兩個同樣的人。
       const rejoinId = body.rejoinId && String(body.rejoinId);
       if (rejoinId && room.players[rejoinId]) {
-        const nm = (body.name && String(body.name).trim());
+        const nm = cleanRoomName(body.name, "");
         if (nm) room.players[rejoinId].name = nm;
         room.players[rejoinId].lastSeen = this.now();
         await this.save();
@@ -644,7 +656,7 @@ export class RoomDO {
       if (Object.keys(room.players).length >= MAX_PLAYERS)
         return this.json({ ok: false, error: "room full" }, 409);
       const playerId = this.newPlayerId();
-      const name = (body.name && String(body.name).trim()) || "Player" + room.nextPlayerNum;
+      const name = cleanRoomName(body.name, "Player" + room.nextPlayerNum);
       room.nextPlayerNum++;
       room.players[playerId] = { name, score: 0, ready: false, lastSeen: this.now() };
       await this.save();
