@@ -1433,8 +1433,35 @@ function primeSong(opts){
 
 /* ===================== 畫面切換 ===================== */
 function showScreen(id){
+  const 目前 = document.querySelector('.screen.active');
+  const 離開的 = 目前 ? 目前.id : null;
+
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+
+  if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
+  // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
+  if(typeof renderIdentity === 'function') renderIdentity();
+}
+
+// 離開某個畫面時該收拾的東西。不收的話，倒數會在背景繼續跑完，
+// 然後在完全不相干的畫面上突然放出音樂 —— 而那一題也就白白浪費掉了。
+// 實測路徑：遊戲中點右上角頭像去看個人檔案，四秒後音樂就在那裡播起來。
+function onLeaveScreen(id){
+  if(id === 'screen-game'){
+    clearCountdown();
+    stopProgressLoop();
+    stopTimedTimer();
+    clearTimeout(playWatchdog);
+    awaitingPlayStart = false;
+    try{ ytPlayer.mute(); ytPlayer.pauseVideo(); }catch(e){}
+  }
+  if(id === 'screen-live'){
+    liveStopAudio();
+    // 輪詢也要停。只停聲音的話，人已經不在競速畫面了，
+    // 背景還是每 0.7 秒打一次伺服器，而且會一直被算成在場上。
+    stopLivePoll();
+  }
 }
 
 /* ===================== 年代選擇 ===================== */
@@ -2624,7 +2651,11 @@ function paintAvatar(el, avatar){
 
 function renderIdentity(){
   const bar = document.getElementById('identity-bar');
-  if(!profile){ bar.style.display = 'none'; return; }
+  // 遊戲進行中藏起來。點下去會離開當前這一題，而那一題就浪費了 ——
+  // 與其事後補救，不如一開始就別讓人誤觸。
+  const 現在 = document.querySelector('.screen.active');
+  const 遊戲中 = 現在 && (現在.id === 'screen-game' || 現在.id === 'screen-live');
+  if(!profile || 遊戲中){ bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
   paintAvatar(document.getElementById('identity-avatar'), profile.avatar);
   document.getElementById('identity-nick').textContent = profile.nick;
@@ -3660,7 +3691,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1308';
+const APP_VERSION = '2026-09-20-1315';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
@@ -3728,6 +3759,19 @@ async function checkForUpdate(){
     );
   }catch(e){ /* 拿不到就算了，總比擋住玩家好 */ }
 }
+
+// 歌庫是獨立的 songs.js，有可能載入失敗（網路中斷、被擋、快取壞掉）。
+// 不檢查的話，玩家可以一路點進遊戲畫面，然後面對一個空的、沒有題目的
+// 畫面，而且沒有任何說明 —— 實測過就是這個結果。
+(function checkSongLibrary(){
+  const 壞了 = (typeof SONGS === 'undefined') || !Array.isArray(SONGS) || SONGS.length === 0;
+  if(!壞了) return;
+  showAlert(
+    '⚠️ 歌庫沒有載入成功，現在開始遊戲會是空的。<br>' +
+    '通常是網路中斷，或是檔案被瀏覽器／外掛擋下來了。',
+    [{ label: '清除快取並重新載入', onClick: hardReload }]
+  );
+})();
 
 // 伺服器明確回報「這個 playerId 不存在」時呼叫。
 // 這跟網路不通完全是兩回事，不能一起吞掉。

@@ -8,7 +8,8 @@
    使用者還看到舊版本 —— 那會毀掉「改完重新整理就生效」這個最大優點。
 */
 
-const CACHE = 'earsleuth-v2';
+// 換版本號會讓 activate 把舊的整個刪掉 —— 之前那份已經被查詢字串灌肥了
+const CACHE = 'earsleuth-v3';
 // 只留最低限度的殼，離線時至少開得起來
 const SHELL = ['./', './index.html', './songs.js', './manifest.json', './icon-192.png'];
 
@@ -35,18 +36,23 @@ self.addEventListener('fetch', (e) => {
   // 一旦被快取住就會回報「你已經是最新的」，這個機制反而變成幫兇。
   if (new URL(req.url).pathname.endsWith('/version.json')) return;
 
+  // 快取一律用「去掉查詢字串」的網址當 key。用完整網址的話，
+  // index.html?t=1、?t=2、?r=3 會各自存成一份完整頁面 ——
+  // 實測開幾次就堆了八份，而且會一直長大直到把使用者的儲存空間吃完。
+  const cacheKey = new URL(req.url).origin + new URL(req.url).pathname;
+
   e.respondWith(
     fetch(req)
       .then((res) => {
         // 順手把最新版本存起來，純粹當離線時的後備
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          caches.open(CACHE).then((c) => c.put(cacheKey, copy)).catch(() => {});
         }
         return res;
       })
       .catch(() =>
-        caches.match(req).then((hit) => hit || caches.match('./index.html'))
+        caches.match(cacheKey).then((hit) => hit || caches.match('./index.html'))
       )
   );
 });
