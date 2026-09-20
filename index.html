@@ -827,7 +827,7 @@
 
   <!-- 連線對戰：建立/加入房間 -->
   <section id="screen-mp-menu" class="screen">
-    <p style="text-align:center; color:var(--muted); margin:0 0 14px;">建立一個房間邀朋友加入，或輸入朋友給你的房號（最多 8 人）</p>
+    <p style="text-align:center; color:var(--muted); margin:0 0 14px;">建立一個房間邀朋友加入，或輸入朋友給你的 6 位房號（最多 8 人）</p>
     <div class="actions-center" style="margin-bottom:10px;">
       <input id="mp-name" maxlength="10" placeholder="你的名字（可留空）"
         style="width:220px; padding:11px 14px; border-radius:999px; border:1px solid var(--muted); background:var(--card); color:var(--text); font-size:15px; text-align:center;">
@@ -836,7 +836,7 @@
       <button class="btn-main" id="mp-create-btn">➕ 建立房間</button>
     </div>
     <div style="display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;">
-      <input id="mp-join-code" maxlength="4" inputmode="numeric" placeholder="輸入 4 位房號"
+      <input id="mp-join-code" maxlength="6" inputmode="numeric" placeholder="輸入 6 位房號"
         style="width:150px; padding:11px 14px; border-radius:999px; border:1px solid var(--muted); background:var(--card); color:var(--text); font-size:15px; text-align:center; letter-spacing:2px;">
       <button class="btn-main" id="mp-join-btn">加入房間</button>
     </div>
@@ -2113,7 +2113,8 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
   const code = document.getElementById('mp-join-code').value.trim();
   const errEl = document.getElementById('mp-join-error');
   errEl.textContent = '';
-  if(!/^\d{4}$/.test(code)){ errEl.textContent = '請輸入 4 位數字房號'; return; }
+  // 仍然接受 4 位：加長之前開的房間可能還在跑，不該因為改版就進不去
+  if(!/^\d{4,6}$/.test(code)){ errEl.textContent = '請輸入房號（6 位數字）'; return; }
   const name = document.getElementById('mp-name').value.trim();
   try{
     const res = await fetch(API_BASE + '/api/join-room', {
@@ -3505,7 +3506,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-09-20-1233';
+const APP_VERSION = '2026-09-20-1241';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

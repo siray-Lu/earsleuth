@@ -28,8 +28,10 @@ function json(obj, status = 200) {
   });
 }
 
+// 六位數共 90 萬組。四位數只有 9000 組，用程式從頭掃到尾幾分鐘就跑完，
+// 網站公開之後等於任何人都能掃到正在進行的房間再闖進去。
 function randCode() {
-  return String(Math.floor(1000 + Math.random() * 9000));
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 // 房間裡的名字是其他玩家會看到的東西，長度一定要在伺服器這邊夾死。

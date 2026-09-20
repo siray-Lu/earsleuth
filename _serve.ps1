@@ -77,7 +77,10 @@ function Touch-Player {
 
 function New-RoomCode {
     do {
-        $code = -join ((0..9) | Get-Random -Count 4)
+        # Get-Random -Count 是「不重複抽取」，原本那寫法抽不到 1123 這種有重複
+        # 數字的房號，實際只有 5040 組而不是 9000 組。用 Minimum/Maximum 才是
+        # 真正的隨機六位數，跟雲端後端的房號規則一致。
+        $code = [string](Get-Random -Minimum 100000 -Maximum 1000000)
     } while ($rooms.ContainsKey($code))
     return $code
 }
