@@ -1024,10 +1024,32 @@ const DIFFICULTIES = {
 /* ===================== 年代篩選（復古 / 新潮 / 大亂鬥） ===================== */
 const ERA_LABELS = { pre90:"懷舊金曲（70~90 年代）", post90:"千禧新聲（2000 年代以後）", mixed:"大亂鬥（不限年代）" };
 let selectedEra = 'mixed';
+/* ---------- 失效影片 ----------
+   1018 支影片裡遲早會有下架、轉私人或被地區封鎖的。碰過一次就記下來，
+   之後不要再抽到 —— 不記的話同一首歌會一再出現，每次都讓玩家乾等十秒再按跳過。 */
+const DEAD_KEY = 'sgd.deadVideos';
+let deadVideos = new Set();
+try{ deadVideos = new Set(JSON.parse(localStorage.getItem(DEAD_KEY) || '[]')); }catch(e){}
+
+function markVideoDead(videoId){
+  if(!videoId || deadVideos.has(videoId)) return;
+  deadVideos.add(videoId);
+  // 只留最近這些：避免無上限成長，也讓偶發的誤判有機會被忘掉
+  const arr = [...deadVideos].slice(-200);
+  deadVideos = new Set(arr);
+  try{ localStorage.setItem(DEAD_KEY, JSON.stringify(arr)); }catch(e){}
+  console.warn('[音隙偵探] 這支影片無法播放，之後不再抽到:', videoId);
+}
+
 function eraPool(){
-  if(selectedEra === 'pre90') return SONGS.filter(s=>s.era === 'pre90');
-  if(selectedEra === 'post90') return SONGS.filter(s=>s.era === 'post90');
-  return SONGS;
+  const 全部 = selectedEra === 'pre90'  ? SONGS.filter(s=>s.era === 'pre90')
+             : selectedEra === 'post90' ? SONGS.filter(s=>s.era === 'post90')
+             : SONGS;
+  if(!deadVideos.size) return 全部;
+  const 可用 = 全部.filter(s => !deadVideos.has(s.videoId));
+  // 萬一判斷失準把大半歌庫標成壞的（例如一整段時間都沒網路），
+  // 寧可讓玩家偶爾碰到壞的，也不能把題庫掏空變成開不了局
+  return 可用.length >= Math.min(60, 全部.length) ? 可用 : 全部;
 }
 
 /* ===================== 難度不綁歌曲，改成綁「播放哪一段」 =====================
@@ -1203,6 +1225,18 @@ window.onYouTubeIframeAPIReady = function(){
           liveCue(livePendingCue.videoId, livePendingCue.startSeconds);
           livePendingCue = null;
         }
+      },
+      // 原本這裡什麼都沒接，所以競速碰到失效影片時是一片安靜、
+      // 沒有任何說明，而且進度條照跑 —— 玩家會以為是自己的裝置壞了。
+      onError: function(e){
+        if(liveCurrentVideoId && [100, 101, 150].includes(e.data)) markVideoDead(liveCurrentVideoId);
+        clearTimeout(live.muteTimer);
+        stopLiveBar();
+        try{ livePlayer.mute(); }catch(err){}
+        const hint = document.getElementById('live-hint');
+        if(hint && live.phase === 'play'){
+          hint.textContent = '⚠️ 這一題的影片無法播放，直接猜或等下一題';
+        }
       }
     }
   });
@@ -1314,6 +1348,11 @@ function onPlayerError(e){
     }, 500);
     return;
   }
+
+  // 100 = 影片不存在或已移除，101/150 = 擁有者停用嵌入播放。
+  // 這三種重試再多次也不會好，記下來之後就別再抽到。
+  // 錯誤碼 2（參數錯誤）與 5（HTML5 播放器問題）可能是一時的，不標記。
+  if(q && q.song && [100, 101, 150].includes(e.data)) markVideoDead(q.song.videoId);
 
   const detail = YT_ERROR_MESSAGES[e.data] || ('未知錯誤代碼 ' + e.data);
   document.getElementById('play-hint').textContent = `⚠️ 播放失敗：${detail}（錯誤碼 ${e.data}）。請用下方「跳過」看答案`;
@@ -3297,7 +3336,9 @@ const live = {
 
 /* ---------- 播放器 ---------- */
 
+let liveCurrentVideoId = null;
 function liveCue(videoId, startSeconds){
+  liveCurrentVideoId = videoId;
   const opts = { videoId, startSeconds };
   if(livePlayerReady && livePlayer && livePlayer.cueVideoById){
     try{
@@ -3324,11 +3365,21 @@ function liveStartClip(clipSeconds){
   (function tryStart(){
     let st = -1;
     try{ st = livePlayer.getPlayerState(); }catch(e){}
-    if(st === 1 || Date.now() > deadline){
+    if(st === 1){
       liveUnmute();
       clearTimeout(live.muteTimer);
       live.muteTimer = setTimeout(liveMute, clipMs);
       startLiveBar(clipSeconds);
+      return;
+    }
+    // 等到最後還是沒開始播。原本這裡會照樣取消靜音並讓進度條跑起來，
+    // 畫面上看起來一切正常但其實一點聲音都沒有 —— 那是在騙玩家。
+    if(Date.now() > deadline){
+      const hint = document.getElementById('live-hint');
+      if(hint && live.phase === 'play') hint.textContent = '⚠️ 這一題載不出聲音，直接猜或等下一題';
+      liveUnmute();   // 還是試著開聲音，萬一只是慢
+      clearTimeout(live.muteTimer);
+      live.muteTimer = setTimeout(liveMute, clipMs);
       return;
     }
     // 停在「已載入但沒播」或「還沒開始」就再催一次。
@@ -3691,7 +3742,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-18-1244';
+const APP_VERSION = '2026-10-18-1254';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
