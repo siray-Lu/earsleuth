@@ -2215,7 +2215,10 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
       method:'POST', headers:{'Content-Type':'application/json'},
       // 上次在同一間房用過的身分，如果伺服器上還在就直接沿用，
       // 免得「不小心退出後再加入」時房間裡出現兩個一樣的人
-      body: JSON.stringify({ code, name, rejoinId: mpRecallSeat(code).id, secret: mpRecallSeat(code).secret })
+      // 同一個瀏覽器的另一個分頁正在這間房裡的話，不要沿用它的座位 ——
+      // 沿用的結果是把對方的位子整個接管掉（連名字都會被改）。
+      body: JSON.stringify(Object.assign({ code, name },
+        mpSeatTakenByOtherTab(code) ? {} : { rejoinId: mpRecallSeat(code).id, secret: mpRecallSeat(code).secret }))
     });
     const data = await res.json();
     if(!data.ok){
@@ -2244,8 +2247,33 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
 /* 記住自己在某個房號用過的 playerId。
    關掉分頁再開會是新的分頁，所以用 localStorage 而不是 sessionStorage。
    伺服器上如果那個 id 已經不在了，會自動配一個新的，所以留著舊的沒關係。 */
+// 這個分頁的識別碼。放 sessionStorage：重新整理會留著（所以接得回原位），
+// 但開新分頁是全新的一份（所以不會去搶別的分頁的座位）。
+const TAB_ID = (function(){
+  try{
+    let t = sessionStorage.getItem('sgd.tab');
+    if(!t){ t = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('sgd.tab', t); }
+    return t;
+  }catch(e){ return 'tab-' + Math.random().toString(36).slice(2); }
+})();
+
+// 座位正被哪個分頁使用。在房間裡時每次輪詢都會更新時間戳。
+function mpClaimSeat(code){
+  try{ localStorage.setItem('mp-seat-' + code, JSON.stringify({ tab: TAB_ID, ts: Date.now() })); }catch(e){}
+}
+function mpSeatTakenByOtherTab(code){
+  try{
+    const raw = localStorage.getItem('mp-seat-' + code);
+    if(!raw) return false;
+    const o = JSON.parse(raw);
+    // 超過這個時間沒更新就當作那個分頁已經關了，座位可以接回來
+    return o.tab !== TAB_ID && (Date.now() - (o.ts || 0)) < 8000;
+  }catch(e){ return false; }
+}
+
 function mpRememberPlayerId(code, playerId, secret){
   try{ localStorage.setItem('mp-pid-' + code, JSON.stringify({ id: playerId, secret })); }catch(e){}
+  mpClaimSeat(code);
 }
 function mpRecallSeat(code){
   try{
@@ -2261,6 +2289,7 @@ function mpRecallSeat(code){
 function mpRecallPlayerId(code){ return mpRecallSeat(code).id; }
 function mpForgetPlayerId(code){
   try{ localStorage.removeItem('mp-pid-' + code); }catch(e){}
+  try{ localStorage.removeItem('mp-seat-' + code); }catch(e){}
 }
 
 function mpLeaveRoom(){
@@ -2314,13 +2343,14 @@ document.getElementById('mp-result-lobby-btn').addEventListener('click', async (
 });
 
 function mpStartPolling(){
+  if(mp.code) mpClaimSeat(mp.code);
   mpStopPolling();
   mp.lastPhase = null;
   mp.currentPhase = null;
   mp.lastIndex = -1;
   mp.answered = false;
   mpPollTick();
-  mp.pollTimer = setInterval(mpPollTick, 700);
+  mp.pollTimer = setInterval(()=>{ if(mp.code) mpClaimSeat(mp.code); mpPollTick(); }, 700);
 }
 
 function mpStopPolling(){
@@ -3742,7 +3772,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-18-1254';
+const APP_VERSION = '2026-10-18-1311';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
