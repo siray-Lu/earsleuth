@@ -2215,10 +2215,9 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
       method:'POST', headers:{'Content-Type':'application/json'},
       // 上次在同一間房用過的身分，如果伺服器上還在就直接沿用，
       // 免得「不小心退出後再加入」時房間裡出現兩個一樣的人
-      // 同一個瀏覽器的另一個分頁正在這間房裡的話，不要沿用它的座位 ——
-      // 沿用的結果是把對方的位子整個接管掉（連名字都會被改）。
-      body: JSON.stringify(Object.assign({ code, name },
-        mpSeatTakenByOtherTab(code) ? {} : { rejoinId: mpRecallSeat(code).id, secret: mpRecallSeat(code).secret }))
+      // mpRecallSeat 已經排除掉「別的分頁正在用」的座位，
+      // 所以這裡拿到的一定是自己的位子或沒人要的位子，直接帶上去。
+      body: JSON.stringify({ code, name, rejoinId: mpRecallSeat(code).id, secret: mpRecallSeat(code).secret })
     });
     const data = await res.json();
     if(!data.ok){
@@ -2257,39 +2256,73 @@ const TAB_ID = (function(){
   }catch(e){ return 'tab-' + Math.random().toString(36).slice(2); }
 })();
 
-// 座位正被哪個分頁使用。在房間裡時每次輪詢都會更新時間戳。
-function mpClaimSeat(code){
-  try{ localStorage.setItem('mp-seat-' + code, JSON.stringify({ tab: TAB_ID, ts: Date.now() })); }catch(e){}
-}
-function mpSeatTakenByOtherTab(code){
+/* ---------- 座位紀錄 ----------
+   一個房間存一份清單，每筆是一個分頁的座位：{ tab, id, secret, ts }。
+   ts 是那個分頁最後一次輪詢的時間，用來判斷它是不是還開著。
+
+   為什麼不是一格就好：localStorage 是整個瀏覽器共用的，只存一格的話
+   第二個分頁加入同一間房就會把第一個分頁的 id 與密鑰蓋掉 ——
+   實測房主的紀錄被客人蓋掉，房主一重整就接管了客人的位子。 */
+const SEAT_ALIVE_MS = 8000;   // 超過這麼久沒更新就當那個分頁已經關了
+
+function mpReadSeats(code){
   try{
-    const raw = localStorage.getItem('mp-seat-' + code);
-    if(!raw) return false;
-    const o = JSON.parse(raw);
-    // 超過這個時間沒更新就當作那個分頁已經關了，座位可以接回來
-    return o.tab !== TAB_ID && (Date.now() - (o.ts || 0)) < 8000;
-  }catch(e){ return false; }
+    const raw = localStorage.getItem('mp-pid-' + code);
+    if(!raw) return [];
+    // 舊格式：{id, secret} 單一座位，或更早的純字串 id。
+    // 沒有 tab 欄位，就當成「某個已經關掉的分頁留下的」，誰都可以接回去。
+    if(raw[0] !== '{' && raw[0] !== '[') return [{ tab: null, id: raw, secret: null, ts: 0 }];
+    const v = JSON.parse(raw);
+    if(Array.isArray(v)) return v.filter(x => x && x.id);
+    return v.id ? [{ tab: null, id: v.id, secret: v.secret || null, ts: 0 }] : [];
+  }catch(e){ return []; }
+}
+function mpWriteSeats(code, list){
+  // 只留最近幾筆：同一個瀏覽器開過很多分頁時不要無限長大
+  const trimmed = list.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0, 8);
+  try{ localStorage.setItem('mp-pid-' + code, JSON.stringify(trimmed)); }catch(e){}
+}
+
+// 在房間裡時每次輪詢都呼叫，宣告「這個座位我還在用」
+function mpClaimSeat(code){
+  const list = mpReadSeats(code);
+  const mine = list.find(x => x.tab === TAB_ID);
+  if(!mine) return;          // 還沒有座位就沒什麼好宣告的
+  mine.ts = Date.now();
+  mpWriteSeats(code, list);
 }
 
 function mpRememberPlayerId(code, playerId, secret){
-  try{ localStorage.setItem('mp-pid-' + code, JSON.stringify({ id: playerId, secret })); }catch(e){}
-  mpClaimSeat(code);
+  const list = mpReadSeats(code).filter(x => x.tab !== TAB_ID);
+  list.push({ tab: TAB_ID, id: playerId, secret, ts: Date.now() });
+  mpWriteSeats(code, list);
 }
+
+/* 這個分頁該用哪個座位接回去：
+   先找自己那筆（重新整理的情況），沒有就找一筆「已經沒有分頁在用」的
+   （關掉再開的情況）。別的分頁正在用的座位一律不碰 —— 碰了就是把人家踢掉。 */
 function mpRecallSeat(code){
-  try{
-    const raw = localStorage.getItem('mp-pid-' + code);
-    if(!raw) return { id: null, secret: null };
-    // 舊格式只存了 id 這個純字串。沒有密鑰就重連不了，會被當成新玩家加入，
-    // 這是可以接受的 —— 總比留一條「沒帶密鑰也放行」的後門好。
-    if(raw[0] !== '{') return { id: raw, secret: null };
-    const o = JSON.parse(raw);
-    return { id: o.id || null, secret: o.secret || null };
-  }catch(e){ return { id: null, secret: null }; }
+  const list = mpReadSeats(code);
+  const mine = list.find(x => x.tab === TAB_ID);
+  if(mine) return { id: mine.id, secret: mine.secret || null };
+
+  const now = Date.now();
+  const 沒人用的 = list
+    .filter(x => now - (x.ts || 0) >= SEAT_ALIVE_MS)
+    .sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
+  // 沒有密鑰的舊紀錄照樣回傳 id：伺服器會因為密鑰不對而當成新玩家加入，
+  // 這比留一條「沒帶密鑰也放行」的後門好。
+  if(沒人用的) return { id: 沒人用的.id, secret: 沒人用的.secret || null };
+  return { id: null, secret: null };
 }
 function mpRecallPlayerId(code){ return mpRecallSeat(code).id; }
+
+// 只清掉自己這個分頁的座位。其他分頁可能正在同一間房裡，不要連它們的一起清掉。
 function mpForgetPlayerId(code){
-  try{ localStorage.removeItem('mp-pid-' + code); }catch(e){}
-  try{ localStorage.removeItem('mp-seat-' + code); }catch(e){}
+  const list = mpReadSeats(code).filter(x => x.tab !== TAB_ID);
+  if(list.length) mpWriteSeats(code, list);
+  else { try{ localStorage.removeItem('mp-pid-' + code); }catch(e){} }
+  try{ localStorage.removeItem('mp-seat-' + code); }catch(e){}   // 舊版留下的標記
 }
 
 function mpLeaveRoom(){
@@ -3794,7 +3827,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-18-1320';
+const APP_VERSION = '2026-10-18-1327';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
