@@ -142,6 +142,17 @@ function publicProfile(p) {
 const TIMED_COUNTS = [10, 20, 30, 40];
 const ERAS = ["pre90", "post90", "mixed"];
 
+// boardKey 反推回年代與題數。題數要從這裡拿，不能採信前端送的 count ——
+// 那是防機器人下限（一題至少 0.8 秒）的唯一依據，被歸零就形同沒有。
+function parseBoardKey(key) {
+  const i = String(key == null ? "" : key).lastIndexOf("_");
+  if (i < 0) return null;
+  const era = key.slice(0, i);
+  const n = Math.floor(Number(key.slice(i + 1)));
+  if (!ERAS.includes(era) || !TIMED_COUNTS.includes(n)) return null;
+  return { era, count: n };
+}
+
 function boardKey(era, count) {
   if (!ERAS.includes(era)) return null;
   const n = Math.floor(Number(count));
@@ -701,6 +712,10 @@ export class RoomDO {
 
   publicState() {
     const room = this.room;
+    const currentSongId = room.songIds[room.index];
+    const currentSong = currentSongId == null ? null : SONGS.find((x) => x.id === currentSongId);
+    // 結算畫面也要看得到最後一題的答案，所以 finished 一起算揭曉
+    const revealing = room.phase === "revealed" || room.phase === "finished";
     const players = Object.keys(room.players).map((id) => ({
       id,
       name: room.players[id].name,
@@ -719,7 +734,14 @@ export class RoomDO {
       index: room.index,
       total: room.songIds.length,
       correctSongId: room.songIds[room.index] ?? null,
-      // 只送當前這一題。整局 50 題的選項全送會讓每 0.7 秒一次的輪詢白白變肥，
+      // 這一題要播哪支影片，由伺服器告訴前端。
+      // 前端自己查本機歌庫的話，版本比伺服器舊就查不到這首歌 ——
+      // 封面變成 .../undefined/hqdefault.jpg、放不出聲音，揭曉時還會拋錯把對局凍住。
+      videoId: currentSong ? currentSong.videoId : null,
+      // 歌名與歌手只在揭曉後才送。作答階段送出去等於直接公布答案。
+      correctTitle: revealing && currentSong ? currentSong.title : null,
+      correctArtist: revealing && currentSong ? currentSong.artist : null,
+      // 只送當前這一題的選項。整局 50 題全送會讓每 0.7 秒一次的輪詢白白變肥，
       // 而且提前把後面的答案送到前端等於可以偷看。
       optionIds: (room.optionIds && room.optionIds[room.index]) || null,
       optionTitles: (room.optionIds && room.optionIds[room.index])
@@ -1101,7 +1123,10 @@ export class PlayerDO {
     // 不然送一個請求就能宣稱 40 題用 32 秒跑完，整張排行榜變成榮譽制。
     if (path === "/api/profile/timed-start") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
-      if (!body.boardKey) return json({ ok: false, error: "bad board" }, 400);
+      // boardKey 要真的是一張存在的榜，不能只檢查非空：
+      // 題數是防機器人下限的依據，讓前端自由指定就等於讓它自己決定下限。
+      const parsed = parseBoardKey(body.boardKey);
+      if (!parsed) return json({ ok: false, error: "bad board" }, 400);
       // 題目由伺服器發。這不只是為了公平 —— 前端要拿到題目才能開始玩，
       // 所以「發出題目的這一刻」就是無法造假的起跑點。
       // 只做伺服器計時而讓前端自己出題的話，前端可以先玩完再來報到。
@@ -1119,7 +1144,7 @@ export class PlayerDO {
       profile.timedRun = {
         runId,
         boardKey: body.boardKey,
-        count: Math.floor(Number(body.count)) || 0,
+        count: parsed.count,   // 從 boardKey 推出來的，不是前端送的
         startedAt: Date.now(),
       };
       await this.state.storage.put("profile", profile);

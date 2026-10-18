@@ -1452,6 +1452,14 @@ function unmaskMediaSession(){
 
 function cueSong(song){
   maskMediaSession();
+  // 拿不到影片時要主動把上一首停掉。不停的話上一題的歌會繼續唱下去，
+  // 玩家會以為那就是這一題的片段 —— 比沒有聲音更糟。
+  if(!song || !song.videoId){
+    try{ if(ytPlayer && ytPlayer.mute) ytPlayer.mute(); }catch(e){}
+    try{ if(ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo(); }catch(e){}
+    pendingCue = null;
+    return;
+  }
   const opts = { videoId: song.videoId, startSeconds: song.start };
   if(ytReady && ytPlayer && ytPlayer.cueVideoById){
     primeSong(opts);
@@ -2539,9 +2547,14 @@ function mpLoadQuestionUI(d){
   void vinyl.offsetWidth;
   vinyl.style.transition = '';
 
-  const baseSong = SONGS.find(s => s.id === d.correctSongId);
-  const song = Object.assign({}, baseSong, { start: d.start });
-  document.getElementById('cover-img').src = `https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg`;
+  // 影片一律用伺服器送來的。查本機歌庫的話，版本比伺服器舊就查不到這首歌，
+  // 封面會變成 .../undefined/hqdefault.jpg、片段放不出來，揭曉時還會拋錯把對局凍住。
+  const song = mpSongFromState(d);
+  if(!song.videoId){
+    document.getElementById('play-hint').textContent = '⚠️ 這一題拿不到影片，直接猜或等下一題';
+  }
+  document.getElementById('cover-img').src = song.videoId
+    ? `https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg` : '';
   document.getElementById('playback-status').style.display = '';
   document.getElementById('play-hint').textContent = `片段長度 ${d.clipSeconds} 秒`;
   resetClipBar();
@@ -2556,6 +2569,21 @@ function mpLoadQuestionUI(d){
 
    收不到的情況：舊房間（開局時伺服器還沒有這個欄位）、或歌庫對不上。
    那就退回舊的自己抽 —— 不公平，但至少玩得下去，不會整題空白。 */
+/* 把伺服器送來的狀態整理成一首「歌」。欄位都以伺服器為準：
+   房間模式的題目本來就是伺服器在管，前端沒有必要、也不應該自己查歌庫 ——
+   兩邊版本不一致時查不到就整局壞掉。
+   歌名與歌手要揭曉後伺服器才會送，作答階段是 null，這是故意的。 */
+function mpSongFromState(d){
+  const local = SONGS.find(s => s.id === d.correctSongId);   // 有就拿來當備援
+  return {
+    id: d.correctSongId,
+    videoId: d.videoId || (local ? local.videoId : null),
+    start: d.start,
+    title: d.correctTitle || (local ? local.title : '（這首歌你的版本還沒有）'),
+    artist: d.correctArtist || (local ? local.artist : ''),
+  };
+}
+
 function mpRenderChoices(correctSong, d){
   const wrap = document.getElementById('choices');
   wrap.innerHTML = '';
@@ -2645,7 +2673,9 @@ async function mpSubmitAnswer(chosenSong, correctSong){
 
 function mpShowRoundResult(d){
   stopProgressLoop();
-  const song = SONGS.find(s => s.id === d.correctSongId);
+  // 同樣以伺服器為準。原本這裡是 SONGS.find(...)，查不到就是 undefined，
+  // 下一行 revealVinyl(undefined) 會拋錯，輪詢整個停掉、對局凍在那一題。
+  const song = mpSongFromState(d);
   document.getElementById('choices').style.display = 'grid';
   revealVinyl(song);
 
@@ -3827,7 +3857,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-18-1327';
+const APP_VERSION = '2026-10-18-1430';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
