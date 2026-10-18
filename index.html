@@ -2514,20 +2514,41 @@ function mpLoadQuestionUI(d){
   resetClipBar();
 
   cueSong(song);
-  mpRenderChoices(song);
+  mpRenderChoices(song, d);
   document.getElementById('choices').style.display = 'none';
 }
 
-function mpRenderChoices(correctSong){
-  const others = shuffle(eraPool().filter(s => s.id !== correctSong.id && s.title !== correctSong.title)).slice(0,3);
-  const options = shuffle([correctSong, ...others]);
+/* 房間模式比的是誰先按對，所以每個人看到的四個選項必須一模一樣（連順序）。
+   這份名單由伺服器在開局時定好，前端只負責顯示。
+
+   收不到的情況：舊房間（開局時伺服器還沒有這個欄位）、或歌庫對不上。
+   那就退回舊的自己抽 —— 不公平，但至少玩得下去，不會整題空白。 */
+function mpRenderChoices(correctSong, d){
   const wrap = document.getElementById('choices');
   wrap.innerHTML = '';
-  options.forEach(song=>{
+
+  const ids = Array.isArray(d && d.optionIds) ? d.optionIds : null;
+  const titles = Array.isArray(d && d.optionTitles) ? d.optionTitles : [];
+
+  let options;
+  if(ids && ids.length === 4 && ids.includes(correctSong.id)){
+    // 歌名優先用伺服器送來的那個：本機歌庫版本不同而找不到這首歌時，
+    // 按鈕還是能顯示正確的歌名，送出的也還是伺服器認得的 id。
+    options = ids.map((id, i) => {
+      const local = SONGS.find(x => x.id === id);
+      return { id, title: titles[i] || (local ? local.title : '（未知歌曲）') };
+    });
+  } else {
+    if(ids) console.warn('[音隙偵探] 伺服器選項不完整，改用本機抽題（這一題難度可能不對等）');
+    const others = shuffle(eraPool().filter(s => s.id !== correctSong.id && s.title !== correctSong.title)).slice(0,3);
+    options = shuffle([correctSong, ...others]).map(s => ({ id: s.id, title: s.title }));
+  }
+
+  options.forEach(opt=>{
     const b = document.createElement('button');
     b.className = 'choice-btn';
-    b.textContent = song.title;
-    b.addEventListener('click', ()=> mpSubmitAnswer(song, correctSong));
+    b.textContent = opt.title;
+    b.addEventListener('click', ()=> mpSubmitAnswer(opt, correctSong));
     wrap.appendChild(b);
   });
 }
@@ -2579,6 +2600,7 @@ async function mpSubmitAnswer(chosenSong, correctSong){
       b.classList.add(chosenSong.id === correctSong.id ? 'correct' : 'wrong');
     }
   });
+
   document.getElementById('play-hint').textContent = '已送出答案，等待對方…';
   try{
     await fetch(API_BASE + '/api/submit-answer', {
@@ -3772,7 +3794,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-18-1311';
+const APP_VERSION = '2026-10-18-1320';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

@@ -668,6 +668,37 @@ export class RoomDO {
     }
   }
 
+  /* 一題的四個選項（含正確答案），順序也在這裡定好。
+     干擾選項從同年代的歌裡抽：跨年代抽的話難度會飄，而且同年代比較像真的在考人。
+     用歌名排除重複 —— 同一首歌在歌庫裡可能有不同版本，兩個一樣的選項會很蠢。 */
+  buildRoomOptions(songId) {
+    const song = SONGS.find((x) => x.id === songId);
+    if (!song) return null;   // 歌庫對不上就讓前端自己處理，不要整局開不起來
+    const pool = SONGS.filter((x) => x.era === song.era);
+    const ids = [song.id];
+    const usedTitles = new Set([song.title]);
+    let guard = 0;
+    while (ids.length < 4 && guard++ < 400) {
+      const cand = pool[Math.floor(Math.random() * pool.length)];
+      if (!cand || usedTitles.has(cand.title)) continue;
+      usedTitles.add(cand.title);
+      ids.push(cand.id);
+    }
+    // 同年代的歌不夠四首（極端情況）就從全庫補，不然選項會少於四個
+    guard = 0;
+    while (ids.length < 4 && guard++ < 400) {
+      const cand = SONGS[Math.floor(Math.random() * SONGS.length)];
+      if (!cand || usedTitles.has(cand.title)) continue;
+      usedTitles.add(cand.title);
+      ids.push(cand.id);
+    }
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+    }
+    return ids;
+  }
+
   publicState() {
     const room = this.room;
     const players = Object.keys(room.players).map((id) => ({
@@ -688,6 +719,15 @@ export class RoomDO {
       index: room.index,
       total: room.songIds.length,
       correctSongId: room.songIds[room.index] ?? null,
+      // 只送當前這一題。整局 50 題的選項全送會讓每 0.7 秒一次的輪詢白白變肥，
+      // 而且提前把後面的答案送到前端等於可以偷看。
+      optionIds: (room.optionIds && room.optionIds[room.index]) || null,
+      optionTitles: (room.optionIds && room.optionIds[room.index])
+        ? room.optionIds[room.index].map((id) => {
+            const s = SONGS.find((x) => x.id === id);
+            return s ? s.title : "";
+          })
+        : null,
       clipSeconds: room.clipSeconds[room.index] ?? null,
       start: room.starts[room.index] ?? null,
       phaseStartedAt: room.phaseStartedAt,
@@ -723,6 +763,7 @@ export class RoomDO {
         nextPlayerNum: 2,
         diffKey: null,
         songIds: [],
+        optionIds: [],
         clipSeconds: [],
         starts: [],
         index: 0,
@@ -787,6 +828,9 @@ export class RoomDO {
       room.songIds = takeNums(body.songIds);
       room.clipSeconds = takeNums(body.clipSeconds);
       room.starts = takeNums(body.starts);
+      // 每一題的選項在這裡一次定好。開局才算，之後不會再變 ——
+      // 每次輪詢現抽的話同一個人重整畫面後選項就不一樣了。
+      room.optionIds = room.songIds.map((id) => this.buildRoomOptions(id));
       room.index = 0;
       room.phase = "countdown";
       room.phaseStartedAt = this.now();
@@ -839,6 +883,7 @@ export class RoomDO {
       room.phaseStartedAt = this.now();
       room.index = 0;
       room.songIds = [];
+      room.optionIds = [];
       room.clipSeconds = [];
       room.starts = [];
       room.answers = {};
