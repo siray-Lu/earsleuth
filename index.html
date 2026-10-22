@@ -3340,7 +3340,10 @@ async function loadLeaderboard(){
       list.appendChild(lbRow(d.myEntry, d.myRank, true));
     }
   }catch(e){
-    status.textContent = '連不上排行榜伺服器。\n（Worker 還沒部署，或是網路不通）';
+    // 「Worker 還沒部署」是開發時才成立的原因，玩家看到這句看不懂也幫不上忙
+    status.textContent = isLocalServer()
+      ? '連不上排行榜伺服器。\n（Worker 還沒部署，或是網路不通）'
+      : '連不上排行榜伺服器，請檢查網路連線後再試一次。';
     status.style.whiteSpace = 'pre-line';
   }
 }
@@ -3632,10 +3635,10 @@ function renderLiveCountdown(d, 換回合){
   g('live-hint').innerHTML = '<span class="live-big">' + Math.ceil(d.msLeft / 1000) + '</span>';
 
   // 趁倒數把音源備好（靜音預播），不然一進作答階段才載入會卡好幾秒
-  if(換回合 && d.question && typeof SONGS !== 'undefined'){
-    const song = SONGS.find(s => s.id === d.question.songId);
-    if(song){
-      liveCue(song.videoId, segmentStartFor(song, d.question.tier));
+  if(換回合 && d.question){
+    const v = liveVideoFor(d.question);
+    if(v){
+      liveCue(v.videoId, v.start);
       live.primedRound = d.roundNo;
     }
   }
@@ -3651,10 +3654,10 @@ function renderLivePlay(d, 需重畫){
   // 與其讓人白白坐一輪，不如當場補載入。片段開頭會晚一點出來，但作答窗是伺服器
   // 統一計時的，晚進來只會吃虧不會佔便宜，不影響公平性。
   // 剩不到 4 秒就別補了，載完也來不及聽完再想。
-  if(!我這回合有份 && d.msLeft > 4000 && d.question && typeof SONGS !== 'undefined'){
-    const song = SONGS.find(s => s.id === d.question.songId);
-    if(song){
-      liveCue(song.videoId, segmentStartFor(song, d.question.tier));
+  if(!我這回合有份 && d.msLeft > 4000 && d.question){
+    const v = liveVideoFor(d.question);
+    if(v){
+      liveCue(v.videoId, v.start);
       live.primedRound = d.roundNo;
       我這回合有份 = true;
       需重畫 = true;
@@ -3673,9 +3676,24 @@ function renderLivePlay(d, 需重畫){
   // 送出答案跟狀態輪詢會撞在一起，那一瞬間伺服器回的還是「我還沒答」的舊數字。
   // 自己明明按下去了卻看到 0 人已答很怪，所以至少把自己算進去。
   const 已答人數 = Math.max(d.answered || 0, 已作答 ? 1 : 0);
+  // 「沒份」有兩種原因，講錯等於騙玩家：中途加入下一回合就好了，
+  // 但拿不到音源的話下一回合還是一樣，要讓他知道問題不在他身上。
+  const 拿不到音源 = !我這回合有份 && !liveVideoFor(d.question);
   g('live-hint').textContent = !我這回合有份
-    ? '這回合中途加入，先看大家比 —— 下一回合就能參戰'
+    ? (拿不到音源
+        ? '⚠️ 這一題拿不到音源，先看大家比（可能要更新頁面）'
+        : '這回合中途加入，先看大家比 —— 下一回合就能參戰')
     : (已作答 ? '已作答，等其他人…（' + 已答人數 + ' 人已答）' : '聽！選一個答案');
+}
+
+/* 這一回合要播哪支影片。以伺服器送來的為準，查不到才退回本機歌庫 ——
+   本機歌庫版本比伺服器舊時查不到那首歌，整回合會變成沒聲音、選項全灰。 */
+function liveVideoFor(q){
+  if(!q) return null;
+  if(q.videoId) return { videoId: q.videoId, start: q.start == null ? 0 : q.start };
+  const local = (typeof SONGS !== 'undefined') ? SONGS.find(s => s.id === q.songId) : null;
+  if(!local) return null;
+  return { videoId: local.videoId, start: segmentStartFor(local, q.tier) };
 }
 
 function renderLiveChoices(d, 可作答){
@@ -3857,7 +3875,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-18-1430';
+const APP_VERSION = '2026-10-22-1520';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

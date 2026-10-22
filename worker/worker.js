@@ -1315,6 +1315,12 @@ const LIVE_COUNTDOWN_MS = 2000;   // 準備
 const LIVE_PLAY_MS = 10000;       // 播放 + 作答窗（片段 8 秒，播完再留 2 秒作答）
 const LIVE_REVEAL_MS = 3000;      // 揭曉 + 看排行
 const LIVE_CLIP_SECONDS = 8;
+
+// 競速固定用「困難」的片段起點。這段公式前端也有一份（segmentStartFor），
+// 移到伺服器算是為了只留一份實作 —— 兩邊各算一次，公式改了就會不一致。
+function liveSegmentStart(song) {
+  return Math.max(10, Math.round(song.start * 0.6));
+}
 const LIVE_TIER = "hard";
 
 // 超過這個時間沒來輪詢就當作離開了。Chrome 會把背景分頁的計時器降頻到約一分鐘一次，
@@ -1390,6 +1396,10 @@ export class LiveDO {
       songId: song.id,
       tier: LIVE_TIER,
       clipSeconds: LIVE_CLIP_SECONDS,
+      // 影片與片段起點由伺服器給。前端自己查歌庫的話，版本比伺服器舊就查不到，
+      // 那一回合會變成沒聲音、選項全灰，而且畫面不會說為什麼。
+      videoId: song.videoId,
+      start: liveSegmentStart(song),
       options,
       answerPos: options.indexOf(song.title),
       correctTitle: song.title,
@@ -1553,6 +1563,8 @@ export class LiveDO {
         songId: s.q.songId,
         tier: s.q.tier,
         clipSeconds: s.q.clipSeconds,
+        videoId: s.q.videoId || null,
+        start: s.q.start == null ? null : s.q.start,
         options: s.q.options,
       };
       // answerPos 在作答階段絕對不能送出去，送了等於直接公布答案
