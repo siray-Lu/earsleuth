@@ -1316,9 +1316,14 @@ function songIsReallyPlaying(player, expectStart){
     if(!player || !player.getPlayerState || player.getPlayerState() !== 1) return false;
     const 位置 = player.getCurrentTime();
     const 片長 = player.getDuration();
-    // 影片一定要長到包含我們要的起點，否則那根本不是這首歌
-    if(!(片長 > (expectStart || 0) + 8)) return false;
-    return Math.abs(位置 - (expectStart || 0)) < 2.5;
+    const 起點 = expectStart || 0;
+    // 廣告片長是十幾二十秒，歌庫裡的 MV 沒有短於一分鐘的（實測 24 首都是 216~410 秒）；
+    // 而且影片一定要長到包含我們要的起點，否則那根本不是這首歌。
+    if(!(片長 >= 60 && 片長 > 起點 + 8)) return false;
+    // 用「已經到達起點」而不是「剛好在起點」。廣告跑完 YouTube 會從我們要求的
+    // 秒數接著播，但我們不一定在那一瞬間剛好檢查到 —— 寫成「剛好」的話，
+    // 只要錯過那個窗口就永遠等不到，玩家會卡在「等廣告」直到逾時。
+    return 位置 >= 起點 - 2.5;
   }catch(e){ return false; }
 }
 
@@ -3967,7 +3972,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-23-0747';
+const APP_VERSION = '2026-10-23-0750';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
