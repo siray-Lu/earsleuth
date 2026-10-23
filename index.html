@@ -1303,6 +1303,25 @@ function hideApiWarning(){
   if(el) el.style.display = 'none';
 }
 
+/* 「播放器狀態 1」不等於「歌在播」：前置廣告播放時狀態也是 1。
+   沒有 YouTube Premium 的人會碰到廣告，而我們是靜音預播、到時間才開聲音 ——
+   把廣告當成開播訊號的話，單人模式會變成對著一片安靜跑計時條，
+   競速模式更糟，會直接把廣告以全音量播出來。
+
+   靠時間軸分辨：真的在播歌時播放位置會落在我們要求的起點附近
+   （實測 24 首都在 ±0.3 秒內），而且片長一定大於那個起點；
+   廣告是從 0 開始算、片長只有十幾二十秒。 */
+function songIsReallyPlaying(player, expectStart){
+  try{
+    if(!player || !player.getPlayerState || player.getPlayerState() !== 1) return false;
+    const 位置 = player.getCurrentTime();
+    const 片長 = player.getDuration();
+    // 影片一定要長到包含我們要的起點，否則那根本不是這首歌
+    if(!(片長 > (expectStart || 0) + 8)) return false;
+    return Math.abs(位置 - (expectStart || 0)) < 2.5;
+  }catch(e){ return false; }
+}
+
 let awaitingPlayStart = false;
 let playWatchdog = null;
 
@@ -1757,7 +1776,36 @@ function nudgePlayVideo(attempt){
   }
 }
 
+/* 廣告還在播就先別開聲音、也別讓計時條跑。
+   單人模式沒有時間壓力，等它跑完就好 —— 重點是要讓玩家知道在等什麼，
+   不要讓他盯著一個正在前進的進度條卻什麼都聽不到。 */
+function waitForSongStart(expectStart, 第幾次){
+  if(state.answered || !state.playbackStarted) return;
+  if(songIsReallyPlaying(ytPlayer, expectStart)){ unmuteAndGo(); return; }
+  // 等個一秒再講，載入慢一拍就說「有廣告」是在亂指控。
+  // 而且要先確認「確實在播、只是播的不是我們要的段落」才叫廣告 ——
+  // 停在沒播的狀態是自動播放被擋，那是完全不同的問題，講錯只會讓人更困惑。
+  if(第幾次 === 3){
+    let 真的在播 = false;
+    try{ 真的在播 = ytPlayer.getPlayerState() === 1; }catch(e){}
+    document.getElementById('play-hint').textContent = 真的在播
+      ? '⏳ 影片前面有廣告，播完就開始（沒有 YouTube Premium 時會遇到）'
+      : '⏳ 影片載入中…';
+  }
+  if(第幾次 > 120){   // 約 36 秒，再久就不是廣告的問題了
+    document.getElementById('play-hint').textContent = '⚠️ 這一題等太久了，按「跳過」看答案';
+    return;
+  }
+  setTimeout(()=> waitForSongStart(expectStart, 第幾次 + 1), 300);
+}
+
 function unmuteAndGo(){
+  const q = state.questions[state.index];
+  const 起點 = q && q.song ? q.song.start : null;
+  if(起點 != null && !songIsReallyPlaying(ytPlayer, 起點)){
+    waitForSongStart(起點, 0);
+    return;
+  }
   try{ ytPlayer.unMute(); ytPlayer.setVolume(100); }catch(err){ console.warn('unMute failed', err); }
   // 真正開始出聲的這一刻 YouTube 會再寫一次媒體資訊，還沒作答的話要立刻蓋回去，免得爆雷
   if(!state.answered) maskMediaSession();
@@ -2550,6 +2598,7 @@ function mpLoadQuestionUI(d){
   // 影片一律用伺服器送來的。查本機歌庫的話，版本比伺服器舊就查不到這首歌，
   // 封面會變成 .../undefined/hqdefault.jpg、片段放不出來，揭曉時還會拋錯把對局凍住。
   const song = mpSongFromState(d);
+  mp.currentStart = song.start || 0;
   if(!song.videoId){
     document.getElementById('play-hint').textContent = '⚠️ 這一題拿不到影片，直接猜或等下一題';
   }
@@ -2636,10 +2685,31 @@ function mpRunCountdown(clipSeconds){
 }
 
 function mpBeginAudible(clipSeconds){
-  try{ ytPlayer.unMute(); ytPlayer.setVolume(100); ytPlayer.playVideo(); }catch(err){ console.warn(err); }
+  // 前置廣告的時候不能開聲音 —— 開了就是把廣告以全音量播給玩家聽。
+  // 房間是全場同時計時，等不起，但至少不要放廣告，而且要說清楚為什麼沒聲音。
+  const 卡在廣告 = !songIsReallyPlaying(ytPlayer, mp.currentStart || 0)
+                   && (()=>{ try{ return ytPlayer.getPlayerState() === 1; }catch(e){ return false; } })();
+  try{
+    if(!卡在廣告){ ytPlayer.unMute(); ytPlayer.setVolume(100); }
+    ytPlayer.playVideo();
+  }catch(err){ console.warn(err); }
   document.getElementById('choices').style.display = 'grid';
   setPlayingUI(true);
-  document.getElementById('play-hint').textContent = `片段長度 ${clipSeconds} 秒 · 搶答中…`;
+  document.getElementById('play-hint').textContent = 卡在廣告
+    ? '⚠️ 這一題前面有廣告，可能聽不到（沒有 YouTube Premium 時會遇到）'
+    : `片段長度 ${clipSeconds} 秒 · 搶答中…`;
+  // 廣告跑完若這一題還沒結束，補開聲音讓他聽到剩下的片段
+  if(卡在廣告){
+    (function 等廣告(){
+      if(mp.currentPhase !== 'playing' || mp.answered) return;
+      if(songIsReallyPlaying(ytPlayer, mp.currentStart || 0)){
+        try{ ytPlayer.unMute(); ytPlayer.setVolume(100); }catch(e){}
+        document.getElementById('play-hint').textContent = `片段長度 ${clipSeconds} 秒 · 搶答中…`;
+        return;
+      }
+      setTimeout(等廣告, 300);
+    })();
+  }
   state.questions = [{ song:null, clipSeconds }];
   state.index = 0;
   state.clipElapsedMs = 0;
@@ -3455,8 +3525,10 @@ const live = {
 /* ---------- 播放器 ---------- */
 
 let liveCurrentVideoId = null;
+let liveCurrentStart = 0;
 function liveCue(videoId, startSeconds){
   liveCurrentVideoId = videoId;
+  liveCurrentStart = startSeconds || 0;
   const opts = { videoId, startSeconds };
   if(livePlayerReady && livePlayer && livePlayer.cueVideoById){
     try{
@@ -3483,7 +3555,8 @@ function liveStartClip(clipSeconds){
   (function tryStart(){
     let st = -1;
     try{ st = livePlayer.getPlayerState(); }catch(e){}
-    if(st === 1){
+    // 狀態 1 不夠 —— 廣告播放時狀態也是 1，照著開聲音會把廣告以全音量播出來
+    if(songIsReallyPlaying(livePlayer, liveCurrentStart)){
       liveUnmute();
       clearTimeout(live.muteTimer);
       live.muteTimer = setTimeout(liveMute, clipMs);
@@ -3494,10 +3567,29 @@ function liveStartClip(clipSeconds){
     // 畫面上看起來一切正常但其實一點聲音都沒有 —— 那是在騙玩家。
     if(Date.now() > deadline){
       const hint = document.getElementById('live-hint');
-      if(hint && live.phase === 'play') hint.textContent = '⚠️ 這一題載不出聲音，直接猜或等下一題';
-      liveUnmute();   // 還是試著開聲音，萬一只是慢
+      // 「在播但不是我們要的位置」= 前置廣告。競速是全場同時計時，等不起 ——
+      // 但至少不要把廣告放給他聽，而且要講清楚為什麼沒聲音。
+      const 卡在廣告 = (st === 1);
+      if(hint && live.phase === 'play'){
+        hint.textContent = 卡在廣告
+          ? '⚠️ 這一題前面有廣告，這回合可能聽不到（沒有 YouTube Premium 時會遇到）'
+          : '⚠️ 這一題載不出聲音，直接猜或等下一題';
+      }
+      if(!卡在廣告) liveUnmute();   // 單純慢的話還是試著開聲音；是廣告就維持靜音
       clearTimeout(live.muteTimer);
       live.muteTimer = setTimeout(liveMute, clipMs);
+      // 廣告跑完若還在作答階段，補開聲音讓他聽到剩下的片段
+      if(卡在廣告){
+        (function 等廣告(){
+          if(live.phase !== 'play') return;
+          if(songIsReallyPlaying(livePlayer, liveCurrentStart)){
+            liveUnmute();
+            if(hint) hint.textContent = '聽！選一個答案';
+            return;
+          }
+          setTimeout(等廣告, 300);
+        })();
+      }
       return;
     }
     // 停在「已載入但沒播」或「還沒開始」就再催一次。
@@ -3875,7 +3967,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-22-1520';
+const APP_VERSION = '2026-10-23-0747';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
