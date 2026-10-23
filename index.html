@@ -1786,7 +1786,7 @@ function nudgePlayVideo(attempt){
    不要讓他盯著一個正在前進的進度條卻什麼都聽不到。 */
 function waitForSongStart(expectStart, 第幾次){
   if(state.answered || !state.playbackStarted) return;
-  if(songIsReallyPlaying(ytPlayer, expectStart)){ unmuteAndGo(); return; }
+  if(songIsReallyPlaying(ytPlayer, expectStart)){ unmuteAndGo(true); return; }
   // 等個一秒再講，載入慢一拍就說「有廣告」是在亂指控。
   // 而且要先確認「確實在播、只是播的不是我們要的段落」才叫廣告 ——
   // 停在沒播的狀態是自動播放被擋，那是完全不同的問題，講錯只會讓人更困惑。
@@ -1804,12 +1804,17 @@ function waitForSongStart(expectStart, 第幾次){
   setTimeout(()=> waitForSongStart(expectStart, 第幾次 + 1), 300);
 }
 
-function unmuteAndGo(){
+function unmuteAndGo(剛等完廣告){
   const q = state.questions[state.index];
   const 起點 = q && q.song ? q.song.start : null;
   if(起點 != null && !songIsReallyPlaying(ytPlayer, 起點)){
     waitForSongStart(起點, 0);
     return;
+  }
+  // 等廣告的提示要收掉。歌都開始播了還掛著「影片前面有廣告」，
+  // 畫面講的就跟實際狀況不一樣了。
+  if(剛等完廣告 && q){
+    document.getElementById('play-hint').textContent = `片段長度 ${q.clipSeconds} 秒 · 播放中…`;
   }
   try{ ytPlayer.unMute(); ytPlayer.setVolume(100); }catch(err){ console.warn('unMute failed', err); }
   // 真正開始出聲的這一刻 YouTube 會再寫一次媒體資訊，還沒作答的話要立刻蓋回去，免得爆雷
@@ -3972,7 +3977,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-23-0750';
+const APP_VERSION = '2026-10-23-0752';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
