@@ -623,23 +623,86 @@
     backdrop-filter:blur(4px);
   }
 
-  /* 插畫橫幅：圖裡的角色站在正中間，這塊是唯一能完整露出他的地方 */
-  .profile-hero{
+  /* ---------- 個人資料的「舞台」 ---------- */
+  /* 容器鎖死成跟插畫一樣的長寬比，裡面的位置才能用百分比定 ——
+     這樣手機跟桌機看到的相對位置完全一樣。 */
+  .profile-stage{
     position:relative;
-    aspect-ratio:16 / 10;      /* 固定比例而不是固定高度：畫面變寬時裁切窗口才不會跟著變、把頭切掉 */
+    width:100%;
+    aspect-ratio:572 / 1024;
     border-radius:20px;
     overflow:hidden;
-    margin:0 0 16px;
-    border:1px solid rgba(255,255,255,.12);
-    background:url("app-bg.webp") center 48% / cover no-repeat;
+    margin:0 0 18px;
+    border:1px solid rgba(255,255,255,.14);
+    background:url("app-bg.webp") center / cover no-repeat;
+    container-type:inline-size;   /* 讓裡面可以用 cqw 當字級單位 */
   }
-  /* 上下兩端淡入背景色。上緣壓得比較重 ——
-     再往上就會露出圖裡那塊寫著「律 RHYTHM」的螢幕 */
-  .profile-hero::after{
-    content:""; position:absolute; inset:0;
-    background:linear-gradient(180deg,
-      rgba(18,8,35,.92) 0%, rgba(18,8,35,.55) 9%, rgba(18,8,35,0) 22%,
-      rgba(18,8,35,0) 62%, rgba(18,8,35,.55) 84%, rgba(18,8,35,.96) 100%);
+  .ps{
+    position:absolute;
+    background:rgba(12,5,26,.62);
+    backdrop-filter:blur(7px);
+    border:1px solid rgba(255,255,255,.16);
+    border-radius:4cqw;
+    padding:3cqw 3.6cqw;
+    box-shadow:0 2cqw 5cqw rgba(0,0,0,.35);
+  }
+  /* 四個位置：直接對應插畫上標出來的四個框 */
+  /* 標出來的框左緣在 51.8%，但暱稱最長 10 個字，那個寬度會把名字擠到換行。
+     往左挪到 45% 才塞得下，位置看起來還是同一塊。 */
+  .ps-1{ left:45%;   right:4.1%;  top:1.3%;  }   /* 身分 */
+  .ps-4{ left:20.2%; right:23.4%; top:14%;   }   /* 接回碼（圖裡那塊大螢幕） */
+  .ps-2{ left:0;     right:56.4%; top:66.8%; }   /* 總覽 */
+  .ps-3{ left:51.8%; right:6.9%;  top:64.4%; }   /* 全場競速 */
+
+  /* 身分：頭像在左、名字與入行時間在右 —— 這個框是扁的，直排塞不下 */
+  .ps-1{ display:flex; align-items:center; gap:2.6cqw; }
+  .ps-1 .avatar{ width:13cqw; height:13cqw; font-size:6.6cqw; border-width:0.6cqw; }
+  /* 這兩行都不換行：框是扁的，一換行就會把下面那行擠出框外 */
+  .ps-nick{
+    font-weight:700; font-size:4.6cqw; line-height:1.2;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .ps-since{
+    font-size:2.8cqw; color:var(--muted); margin-top:0.6cqw;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* 接回碼：整塊都能按，擺在插畫裡那塊大螢幕上 */
+  .ps-4{
+    display:flex; align-items:center; justify-content:center;
+    gap:2cqw; cursor:pointer; color:var(--text); font-family:inherit;
+    /* 要高到蓋住插畫裡整塊螢幕 —— 蓋不滿的話底下會露出「RHYTHM」 */
+    aspect-ratio:2 / 1;
+    border-color:var(--accent);
+    box-shadow:0 0 3cqw rgba(34,227,255,.35), 0 2cqw 5cqw rgba(0,0,0,.35);
+  }
+  .ps-4:hover{ box-shadow:0 0 5cqw rgba(34,227,255,.6), 0 2cqw 5cqw rgba(0,0,0,.35); }
+  .ps-4 .t{ font-size:6.4cqw; font-weight:800; letter-spacing:0.4cqw; }
+  .ps-4 .k{ font-size:5.6cqw; }
+
+  .ps-cap{ font-size:3cqw; color:var(--muted); text-align:center; margin-bottom:1.4cqw; }
+  .ps-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:1.5cqw 0; border-bottom:1px solid rgba(255,255,255,.08);
+  }
+  .ps-row:last-child{ border-bottom:none; }
+  .ps-row .k{ font-size:3.1cqw; color:var(--muted); }
+  .ps-row .v{ font-size:4.4cqw; font-weight:700; }
+
+  /* 接回碼的彈窗 */
+  .rc-modal{
+    position:fixed; inset:0; z-index:60;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+    background:rgba(8,3,18,.72);
+    backdrop-filter:blur(3px);
+  }
+  .rc-modal[hidden]{ display:none; }
+  .rc-sheet{
+    width:100%; max-width:360px;
+    background:rgba(30,12,55,.96);
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:18px; padding:20px;
   }
   .profile-card{
     background:var(--card); border-radius:16px; padding:18px;
@@ -858,38 +921,36 @@
 
   <!-- 個人檔案 -->
   <section id="screen-profile" class="screen">
-    <div class="profile-hero" aria-hidden="true"></div>
-
     <div id="profile-sync-note" class="sync-note" style="display:none;">
       ⚠️ 這份檔案還沒同步到伺服器，目前只存在這台裝置，也還沒有接回碼。
       連上網路後重新整理就會自動補上。
     </div>
 
-    <div class="profile-card" style="text-align:center;">
-      <span class="avatar avatar-lg" id="profile-avatar"></span>
-      <div style="font-weight:700; font-size:22px; margin-top:10px;" id="profile-nick">-</div>
-      <div style="color:var(--muted); font-size:12px; margin-top:4px;" id="profile-since">-</div>
-    </div>
+    <!-- 整張插畫當底，四塊內容擺在插畫上對應的位置 -->
+    <div class="profile-stage">
+      <div class="ps ps-1">
+        <span class="avatar" id="profile-avatar"></span>
+        <div>
+          <div class="ps-nick" id="profile-nick">-</div>
+          <div class="ps-since" id="profile-since">-</div>
+        </div>
+      </div>
 
-    <div class="profile-card">
-      <div class="stat-row"><span class="k">玩過場次</span><span class="v" id="profile-games">0</span></div>
-      <div class="stat-row"><span class="k">總答對題數</span><span class="v" id="profile-correct">0</span></div>
-      <div class="stat-row"><span class="k">整體答對率</span><span class="v" id="profile-rate">-</span></div>
-    </div>
+      <button class="ps ps-4" id="profile-rc-btn">
+        <span class="k">🔑</span><span class="t">接回碼</span>
+      </button>
 
-    <div class="profile-card">
-      <p class="field-label" style="margin-bottom:4px;">⚡ 全場競速</p>
-      <div class="stat-row"><span class="k">累計總分</span><span class="v" id="profile-live-total">0</span></div>
-      <div class="stat-row"><span class="k">最高連對</span><span class="v" id="profile-live-streak">0</span></div>
-      <div class="stat-row"><span class="k">參與回合</span><span class="v" id="profile-live-rounds">0</span></div>
-    </div>
+      <div class="ps ps-2">
+        <div class="ps-row"><span class="k">玩過場次</span><span class="v" id="profile-games">0</span></div>
+        <div class="ps-row"><span class="k">總答對題數</span><span class="v" id="profile-correct">0</span></div>
+        <div class="ps-row"><span class="k">整體答對率</span><span class="v" id="profile-rate">-</span></div>
+      </div>
 
-    <div class="profile-card">
-      <p class="field-label" style="margin-bottom:10px;">接回碼</p>
-      <div class="rc-code" id="profile-rc">----</div>
-      <div class="warn-note">
-        把這串抄下來收好。換手機、清掉瀏覽器資料之後，只有這串能把紀錄接回來。
-        我們沒有你的信箱也沒有密碼，弄丟就真的找不回來了。
+      <div class="ps ps-3">
+        <div class="ps-cap">⚡ 全場競速</div>
+        <div class="ps-row"><span class="k">累計總分</span><span class="v" id="profile-live-total">0</span></div>
+        <div class="ps-row"><span class="k">最高連對</span><span class="v" id="profile-live-streak">0</span></div>
+        <div class="ps-row"><span class="k">參與回合</span><span class="v" id="profile-live-rounds">0</span></div>
       </div>
     </div>
 
@@ -898,6 +959,22 @@
       <button class="btn-ghost" id="profile-back-btn">← 回遊戲</button>
     </div>
   </section>
+
+  <!-- 接回碼：平常收起來，按了舞台上那塊才打開。
+       接回碼等於帳號救回權，不要讓它一直攤在畫面上被旁邊的人看到。 -->
+  <div class="rc-modal" id="rc-modal" hidden>
+    <div class="rc-sheet">
+      <p class="field-label" style="margin-bottom:10px;">接回碼</p>
+      <div class="rc-code" id="profile-rc">----</div>
+      <div class="warn-note">
+        把這串抄下來收好。換手機、清掉瀏覽器資料之後，只有這串能把紀錄接回來。
+        我們沒有你的信箱也沒有密碼，弄丟就真的找不回來了。
+      </div>
+      <div class="actions-center" style="margin-top:14px;">
+        <button class="btn-main" id="rc-close-btn">知道了</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 編輯個人檔案 -->
   <section id="screen-profile-edit" class="screen">
@@ -1771,6 +1848,8 @@ function showScreen(id){
 // 然後在完全不相干的畫面上突然放出音樂 —— 而那一題也就白白浪費掉了。
 // 實測路徑：遊戲中點右上角頭像去看個人檔案，四秒後音樂就在那裡播起來。
 function onLeaveScreen(id){
+  // 接回碼開著的時候切走，回來會看到一個莫名其妙蓋在別的畫面上的彈窗
+  if(id === 'screen-profile'){ const m = document.getElementById('rc-modal'); if(m) m.hidden = true; }
   if(id === 'screen-game'){
     clearCountdown();
     stopProgressLoop();
@@ -1786,6 +1865,16 @@ function onLeaveScreen(id){
     stopLivePoll();
   }
 }
+
+/* ---------- 接回碼的彈窗 ---------- */
+const rcModal = document.getElementById('rc-modal');
+function openRc(){ rcModal.hidden = false; }
+function closeRc(){ rcModal.hidden = true; }
+document.getElementById('profile-rc-btn').addEventListener('click', openRc);
+document.getElementById('rc-close-btn').addEventListener('click', closeRc);
+// 點外面的暗底也關掉（只認暗底本身，點到裡面的內容不算）
+rcModal.addEventListener('click', e=>{ if(e.target === rcModal) closeRc(); });
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && !rcModal.hidden) closeRc(); });
 
 /* ===================== 年代選擇 ===================== */
 // 綁 [data-era] 而不是某個 class：換外觀的時候 class 一定會動，
@@ -4235,7 +4324,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-24-1456';
+const APP_VERSION = '2026-10-24-1515';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
