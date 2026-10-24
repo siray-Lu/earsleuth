@@ -568,9 +568,54 @@
   .color-opt:hover{ transform:scale(1.12); }
   .color-opt.sel{ border-color:var(--text); }
 
+  /* ---------- 個人資料頁的插畫背景 ---------- */
+  #profile-bg{
+    position:fixed; inset:0; z-index:-1;
+    display:none;             /* 只有個人資料頁會打開，其他頁不下載這張圖 */
+    pointer-events:none;
+  }
+  #profile-bg .pic{
+    position:absolute; inset:-20px;   /* 往外擴，模糊才不會在邊緣露出透明 */
+    background:url("profile-bg.webp") center 42% / cover no-repeat;
+    filter:blur(6px) saturate(1.1);
+  }
+  #profile-bg .veil{
+    position:absolute; inset:0;
+    background:
+      linear-gradient(180deg,
+        rgba(18,8,35,.93) 0%,
+        rgba(18,8,35,.86) 30%,
+        rgba(18,8,35,.84) 100%);
+  }
+
+  /* 插畫橫幅：圖裡的角色站在正中間，這塊是唯一能完整露出他的地方 */
+  .profile-hero{
+    position:relative;
+    aspect-ratio:16 / 10;      /* 固定比例而不是固定高度：畫面變寬時裁切窗口才不會跟著變、把頭切掉 */
+    border-radius:20px;
+    overflow:hidden;
+    margin:0 0 16px;
+    border:1px solid rgba(255,255,255,.12);
+    background:url("profile-bg.webp") center 48% / cover no-repeat;
+  }
+  /* 上下兩端淡入背景色。上緣壓得比較重 ——
+     再往上就會露出圖裡那塊寫著「律 RHYTHM」的螢幕 */
+  .profile-hero::after{
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(180deg,
+      rgba(18,8,35,.92) 0%, rgba(18,8,35,.55) 9%, rgba(18,8,35,0) 22%,
+      rgba(18,8,35,0) 62%, rgba(18,8,35,.55) 84%, rgba(18,8,35,.96) 100%);
+  }
   .profile-card{
     background:var(--card); border-radius:16px; padding:18px;
     margin-bottom:16px;
+  }
+  /* 有底圖的時候卡片改成半透明，讓插畫透一點出來；
+     但不能太透，不然數字會跟背景的線條打架 */
+  body.has-profile-bg .profile-card{
+    background:rgba(30,12,55,.78);
+    border:1px solid rgba(255,255,255,.1);
+    backdrop-filter:blur(6px);
   }
   .stat-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -682,6 +727,8 @@
 </head>
 <body>
 <div id="alert-bar" style="display:none;"></div>
+<!-- 個人資料頁的插畫背景。擺在 .app 外面，才蓋得滿整個畫面 -->
+<div id="profile-bg" aria-hidden="true"><div class="pic"></div><div class="veil"></div></div>
 <div class="app">
   <!-- 標題後面的黑膠、耳機與波形。純裝飾，pointer-events 關掉免得擋住點擊 -->
   <div class="hero-deco" aria-hidden="true">
@@ -776,6 +823,8 @@
 
   <!-- 個人檔案 -->
   <section id="screen-profile" class="screen">
+    <div class="profile-hero" aria-hidden="true"></div>
+
     <div id="profile-sync-note" class="sync-note" style="display:none;">
       ⚠️ 這份檔案還沒同步到伺服器，目前只存在這台裝置，也還沒有接回碼。
       連上網路後重新整理就會自動補上。
@@ -1677,6 +1726,11 @@ function showScreen(id){
 
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+
+  // 插畫背景只在個人資料頁出現
+  const 要底圖 = (id === 'screen-profile');
+  document.getElementById('profile-bg').style.display = 要底圖 ? 'block' : 'none';
+  document.body.classList.toggle('has-profile-bg', 要底圖);
 
   if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
   // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
@@ -4151,7 +4205,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-24-1355';
+const APP_VERSION = '2026-10-24-1434';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
