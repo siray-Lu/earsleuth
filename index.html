@@ -901,8 +901,16 @@
       </button>
       <button class="neon-pink" id="go-mp-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 3h3l12 12M18 3h3v3L9 18"/>
-          <path d="M6 15l3 3-3 3-3-3zM18 15l3 3-3 3-3-3z"/>
+          <!-- 右上那把：劍身、護手、握把、柄頭 -->
+          <path d="M20.5 3.5 L10 12.6 L11.4 14 Z"/>
+          <path d="M8.9 11.5 L12.5 15.1"/>
+          <path d="M10.7 13.3 L8.6 15.4"/>
+          <path d="M7.5 15.4 L8.6 16.5 L7.5 17.6 L6.4 16.5 Z"/>
+          <!-- 左上那把：上面那把以 x=12 鏡射 -->
+          <path d="M3.5 3.5 L14 12.6 L12.6 14 Z"/>
+          <path d="M15.1 11.5 L11.5 15.1"/>
+          <path d="M13.3 13.3 L15.4 15.4"/>
+          <path d="M16.5 15.4 L17.6 16.5 L16.5 17.6 L15.4 16.5 Z"/>
         </svg>
         <span>連線對戰</span>
       </button>
@@ -4143,7 +4151,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-24-1330';
+const APP_VERSION = '2026-10-24-1355';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
