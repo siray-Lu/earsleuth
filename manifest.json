@@ -8,9 +8,13 @@
   "scope": ".",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0a2447",
-  "theme_color": "#0a2447",
-  "categories": ["games", "music", "entertainment"],
+  "background_color": "#1b0b33",
+  "theme_color": "#1b0b33",
+  "categories": [
+    "games",
+    "music",
+    "entertainment"
+  ],
   "icons": [
     {
       "src": "icon-192.png",

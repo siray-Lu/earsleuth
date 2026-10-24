@@ -25,7 +25,7 @@
 
 <!-- 加到手機主畫面後會全螢幕開啟，看起來就像一般 App -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0a2447">
+<meta name="theme-color" content="#1b0b33">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -33,23 +33,28 @@
 <meta name="apple-mobile-web-app-title" content="音隙偵探">
 <style>
   :root{
-    --bg1:#0a2447;
-    --bg2:#03122c;
-    --accent:#2ee3dc;
-    --accent2:#62b8ff;
-    --gold:#ffb340;
-    --green:#3ddc97;
-    --red:#ff6b6b;
-    --card:#0e2a52;
-    --text:#eaf3ff;
-    --muted:#8fadd0;
+    --bg1:#2a1047;
+    --bg2:#120823;
+    --accent:#22e3ff;     /* 霓虹青 */
+    --accent2:#ff4ded;    /* 霓虹洋紅 */
+    --gold:#ffcc4d;
+    --green:#49e3a8;
+    --red:#ff6b8a;
+    --card:#271046;
+    --text:#f3ebff;
+    --muted:#ab90d6;
+    --ink:#1b0b33;        /* 亮色按鈕上的字 */
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
     min-height:100vh;
     font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
-    background:radial-gradient(circle at 20% 10%, #14386e 0%, var(--bg1) 40%, var(--bg2) 100%);
+    background:
+      radial-gradient(900px 520px at 12% -8%, #511f86 0%, transparent 60%),
+      radial-gradient(760px 460px at 96% 6%, #7d1f6e 0%, transparent 55%),
+      linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%);
+    background-attachment:fixed;
     color:var(--text);
     display:flex;
     align-items:center;
@@ -60,15 +65,31 @@
     width:100%;
     max-width:640px;
   }
+  .app{ position:relative; }
   h1{
     text-align:center;
-    font-size:clamp(24px,5vw,34px);
-    margin:0 0 6px;
-    background:linear-gradient(90deg,var(--accent),var(--accent2));
-    -webkit-background-clip:text;
-    background-clip:text;
-    color:transparent;
+    font-size:clamp(38px,13vw,58px);
+    margin:26px 0 14px;
+    font-weight:900;
+    letter-spacing:3px;
+    color:#fff;
+    /* 霓虹字：白色本體，外面疊青與洋紅的光暈。
+       第一層要夠實，不然字會被自己的光暈糊掉、看起來像半透明。 */
+    text-shadow:
+      0 0 2px #fff,
+      0 0 8px rgba(255,255,255,.9),
+      0 0 20px var(--accent),
+      0 0 42px var(--accent2);
+    position:relative;
+    z-index:1;
   }
+  /* 標題後面的裝飾（黑膠、耳機、波形）。純裝飾，不要擋到點擊 */
+  .hero-deco{
+    position:absolute; left:0; right:0; top:6px; height:130px;
+    pointer-events:none; opacity:.5; z-index:0;
+    overflow:hidden;    /* 線條畫到容器外面會散出去，裁掉 */
+  }
+  .hero-deco svg{ width:100%; height:100%; }
   .subtitle{
     text-align:center;
     color:var(--muted);
@@ -99,10 +120,77 @@
   .diff-card:active{ transform:translateY(0); }
   .diff-card .name{ font-size:20px; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:8px;}
   .diff-card .meta{ font-size:13px; color:var(--muted); line-height:1.6; }
+
+  /* ---------- 首頁（年代選擇） ---------- */
+  /* 霓虹邊框的顏色由 --line / --glow 兩個變數控制，每張卡片各自指定，
+     這樣青色與洋紅共用同一套樣式，不必寫兩份。 */
+  .era-panel{
+    border:1px solid rgba(255,255,255,.14);
+    background:rgba(18,8,38,.45);
+    border-radius:22px;
+    padding:16px 14px 18px;
+  }
+  .era-panel .panel-title{
+    text-align:center; color:#fff; font-size:17px; font-weight:700;
+    margin:4px 0 14px;
+  }
+  .era-list{ display:flex; flex-direction:column; gap:13px; }
+  .era-card{
+    display:flex; align-items:center; gap:14px;
+    width:100%; text-align:left; cursor:pointer; font-family:inherit;
+    padding:13px 15px; border-radius:18px;
+    color:var(--text);
+    background:linear-gradient(135deg, rgba(62,22,104,.75), rgba(32,13,58,.75));
+    border:2px solid var(--line);
+    box-shadow:0 0 12px rgba(var(--glow),.35), inset 0 0 20px rgba(var(--glow),.08);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .era-card:hover{ transform:translateY(-2px); box-shadow:0 0 20px rgba(var(--glow),.55), inset 0 0 20px rgba(var(--glow),.12); }
+  .era-card:active{ transform:translateY(0); }
+  .era-card .icon{
+    flex:0 0 auto; width:60px; height:60px; border-radius:16px;
+    display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--line); background:rgba(0,0,0,.28);
+    box-shadow:inset 0 0 14px rgba(var(--glow),.25);
+  }
+  .era-card .icon svg{
+    width:34px; height:34px; fill:none;
+    stroke:var(--line); stroke-width:1.6;
+    stroke-linecap:round; stroke-linejoin:round;
+    filter:drop-shadow(0 0 4px var(--line));
+  }
+  /* 這幾個是 span，不設 block 的話三行會擠成一行 */
+  .era-card .t{ display:block; font-size:21px; font-weight:800; line-height:1.2; }
+  .era-card .s{ display:block; font-size:13px; color:var(--muted); margin-top:3px; }
+  .era-card .a{ display:block; font-size:13px; color:#cdb6ef; margin-top:1px; }
+  .neon-cyan{ --line:#22e3ff; --glow:34,227,255; }
+  .neon-pink{ --line:#ff4ded; --glow:255,77,237; }
+
+  /* 底下三個入口 */
+  .home-nav{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px;
+  }
+  .home-nav button{
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+    padding:12px 4px; border-radius:16px; cursor:pointer;
+    font-family:inherit; font-size:14px; font-weight:700;
+    color:var(--text);
+    background:linear-gradient(135deg, rgba(62,22,104,.72), rgba(32,13,58,.72));
+    border:2px solid var(--line);
+    box-shadow:0 0 10px rgba(var(--glow),.3);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .home-nav button:hover{ transform:translateY(-2px); box-shadow:0 0 18px rgba(var(--glow),.5); }
+  .home-nav svg{
+    width:26px; height:26px; fill:none;
+    stroke:var(--line); stroke-width:1.8;
+    stroke-linecap:round; stroke-linejoin:round;
+    filter:drop-shadow(0 0 4px var(--line));
+  }
   .diff-easy{ border-color:#3ddc9755; } .diff-easy:hover{ border-color:var(--green); }
   .diff-hard{ border-color:#ffb34055; } .diff-hard:hover{ border-color:var(--gold); }
   .diff-boss{ border-color:#ff6b6b55; } .diff-boss:hover{ border-color:var(--red); }
-  .diff-random{ border-color:#62b8ff55; grid-column:1 / -1;} .diff-random:hover{ border-color:var(--accent2); }
+  .diff-random{ border-color:#ff4ded55; grid-column:1 / -1;} .diff-random:hover{ border-color:var(--accent2); }
   .badge{ font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); }
 
   /* ---------- 遊戲畫面 ---------- */
@@ -225,13 +313,13 @@
     display:flex;
     align-items:center;
     justify-content:center;
-    box-shadow:0 0 0 3px #03122c, 0 4px 14px rgba(0,0,0,.5);
+    box-shadow:0 0 0 3px var(--bg2), 0 4px 14px rgba(0,0,0,.5);
   }
   .play-btn{
     width:64px; height:64px;
     border-radius:50%;
     background:rgba(255,255,255,.92);
-    color:#0e2a52;
+    color:var(--ink);
     font-size:26px;
     font-weight:700;
     display:flex;
@@ -287,7 +375,7 @@
   .btn-main{
     background:linear-gradient(90deg,var(--accent),var(--accent2));
     border:none;
-    color:#0a2447;
+    color:var(--ink);
     font-weight:700;
     padding:12px 28px;
     border-radius:999px;
@@ -380,7 +468,7 @@
     position:relative;
     border:none; border-radius:999px; padding:12px 18px;
     background:linear-gradient(90deg,var(--accent),var(--accent2));
-    color:#0a2447; font-weight:700; font-size:14px; cursor:pointer;
+    color:var(--ink); font-weight:700; font-size:14px; cursor:pointer;
     box-shadow:0 6px 18px rgba(0,0,0,0.35);
   }
   #mp-chat-badge{
@@ -409,7 +497,7 @@
   }
   .mp-chat-msg.me{ align-self:flex-end; }
   .mp-chat-msg.me .who{ text-align:right; }
-  .mp-chat-msg.me .bubble{ background:var(--accent); color:#0a2447; }
+  .mp-chat-msg.me .bubble{ background:var(--accent); color:var(--ink); }
   .mp-chat-msg.system{ align-self:center; }
   .mp-chat-msg.system .bubble{ background:transparent; color:var(--muted); font-size:12px; padding:2px; }
   #mp-chat-form{
@@ -421,17 +509,18 @@
   }
   #mp-chat-send{
     border:none; border-radius:999px; padding:9px 14px;
-    background:var(--accent2); color:#03122c; font-weight:700; font-size:13px; cursor:pointer;
+    background:var(--accent2); color:var(--ink); font-weight:700; font-size:13px; cursor:pointer;
   }
 
   /* ---------- 個人檔案 ---------- */
   .identity-bar{
-    display:flex; justify-content:center; align-items:center;
-    gap:10px; margin:0 0 22px;
+    display:flex; justify-content:flex-start; align-items:center;
+    gap:10px; margin:0 0 16px;
   }
   .identity-chip{
     display:inline-flex; align-items:center; gap:9px;
-    background:var(--card); border:1px solid rgba(255,255,255,.09);
+    background:rgba(30,12,55,.75); border:2px solid var(--accent);
+    box-shadow:0 0 10px rgba(34,227,255,.35);
     border-radius:999px; padding:5px 15px 5px 5px;
     color:var(--text); font-family:inherit; font-size:14px; cursor:pointer;
     transition:border-color .15s ease, transform .15s ease;
@@ -519,7 +608,7 @@
     transition:background .15s ease, color .15s ease;
   }
   .lb-tab:hover{ color:var(--text); }
-  .lb-tab.sel{ background:var(--accent2); border-color:var(--accent2); color:#03122c; font-weight:700; }
+  .lb-tab.sel{ background:var(--accent2); border-color:var(--accent2); color:var(--ink); font-weight:700; }
 
   .lb-list{ display:flex; flex-direction:column; gap:6px; }
   .lb-row{
@@ -594,13 +683,30 @@
 <body>
 <div id="alert-bar" style="display:none;"></div>
 <div class="app">
-  <h1>🎵 音隙偵探 🎵</h1>
-  <div id="api-warning" style="display:none; background:#3a1b26; border:1px solid var(--red); color:#ffd9d9; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:16px; text-align:center;">
-    ⚠️ 無法連上 YouTube 播放服務。請確認裝置有網路連線、關閉廣告攔截 / 隱私外掛（可能封鎖 youtube.com），再重新整理頁面。
+  <!-- 標題後面的黑膠、耳機與波形。純裝飾，pointer-events 關掉免得擋住點擊 -->
+  <div class="hero-deco" aria-hidden="true">
+    <svg viewBox="0 0 640 120" preserveAspectRatio="xMidYMid slice">
+      <g fill="none" stroke="#ff4ded" stroke-width="1.6" opacity=".75">
+        <circle cx="196" cy="40" r="26"/><circle cx="196" cy="40" r="15"/><circle cx="196" cy="40" r="4"/>
+        <circle cx="246" cy="46" r="20"/><circle cx="246" cy="46" r="11"/><circle cx="246" cy="46" r="3"/>
+      </g>
+      <g fill="none" stroke="#22e3ff" stroke-width="1.8" stroke-linecap="round" opacity=".8">
+        <path d="M398 52a26 26 0 0 1 52 0"/>
+        <rect x="392" y="50" width="12" height="24" rx="6"/>
+        <rect x="444" y="50" width="12" height="24" rx="6"/>
+      </g>
+      <g stroke="#22e3ff" stroke-width="2.4" stroke-linecap="round" opacity=".45">
+        <path d="M20 60v14M34 52v30M48 44v46M62 56v22M76 38v58M90 50v34M104 60v14"/>
+      </g>
+      <g stroke="#ff4ded" stroke-width="2.4" stroke-linecap="round" opacity=".45">
+        <path d="M536 60v14M550 48v38M564 40v50M578 54v26M592 44v46M606 56v22M620 62v10"/>
+      </g>
+      <g fill="none" stroke="#22e3ff" stroke-width="1.4" opacity=".55">
+        <path d="M128 24l12 18h-24z"/>
+        <path d="M498 20l8 8-8 8-8-8z"/>
+      </g>
+    </svg>
   </div>
-
-
-  <!-- 身分列：除了建檔畫面本身，每一頁都看得到自己是誰 -->
   <div class="identity-bar" id="identity-bar" style="display:none;">
     <button class="identity-chip" id="identity-chip">
       <span class="avatar avatar-sm" id="identity-avatar"></span>
@@ -608,6 +714,12 @@
       <span class="hint">個人檔案</span>
     </button>
   </div>
+
+  <h1>音隙偵探</h1>
+  <div id="api-warning" style="display:none; background:#3a1b26; border:1px solid var(--red); color:#ffd9d9; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:16px; text-align:center;">
+    ⚠️ 無法連上 YouTube 播放服務。請確認裝置有網路連線、關閉廣告攔截 / 隱私外掛（可能封鎖 youtube.com），再重新整理頁面。
+  </div>
+
 
   <!-- 首次建檔 -->
   <section id="screen-profile-setup" class="screen">
@@ -727,25 +839,73 @@
   </section>
   <!-- 年代篩選畫面 -->
   <section id="screen-era" class="screen active">
-    <p style="text-align:center; color:var(--muted); margin:0 0 18px;">先選一個歌曲年代範圍</p>
-    <div class="diff-grid">
-      <button class="diff-card diff-easy" data-era="pre90">
-        <div class="name">🕰️ 懷舊金曲</div>
-        <div class="meta">70~90 年代老歌<br>鄧麗君、羅大佑、張學友…</div>
-      </button>
-      <button class="diff-card diff-hard" data-era="post90">
-        <div class="name">🎧 千禧新聲</div>
-        <div class="meta">2000 年代以後<br>周杰倫、五月天、鄧紫棋…</div>
-      </button>
-      <button class="diff-card diff-random" data-era="mixed">
-        <div class="name">🎲 大亂鬥 <span class="badge">不限年代</span></div>
-        <div class="meta">70 年代到現在通通有機會出現</div>
-      </button>
+    <div class="era-panel">
+      <div class="panel-title">先選一個歌曲年代範圍</div>
+      <div class="era-list">
+        <button class="era-card neon-cyan" data-era="pre90">
+          <span class="icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <circle cx="16" cy="16" r="13"/><circle cx="16" cy="16" r="7.5"/><circle cx="16" cy="16" r="2"/>
+              <path d="M16 3a13 13 0 0 1 11.3 6.6"/>
+            </svg>
+          </span>
+          <span>
+            <span class="t">懷舊金曲</span>
+            <span class="s">70~90 年代老歌</span>
+            <span class="a">鄧麗君、羅大佑、張學友…</span>
+          </span>
+        </button>
+
+        <button class="era-card neon-pink" data-era="post90">
+          <span class="icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M5 20v-4a11 11 0 0 1 22 0v4"/>
+              <rect x="3" y="18" width="7" height="11" rx="3.5"/>
+              <rect x="22" y="18" width="7" height="11" rx="3.5"/>
+            </svg>
+          </span>
+          <span>
+            <span class="t">千禧新聲</span>
+            <span class="s">2000 年代以後</span>
+            <span class="a">周杰倫、五月天、鄧紫棋…</span>
+          </span>
+        </button>
+
+        <button class="era-card neon-cyan" data-era="mixed">
+          <span class="icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M16 3l3.2 9.8L29 16l-9.8 3.2L16 29l-3.2-9.8L3 16l9.8-3.2z"/>
+            </svg>
+          </span>
+          <span>
+            <span class="t">大亂鬥</span>
+            <span class="s">不限年代</span>
+            <span class="a">70 年代到現在通通有機會出現</span>
+          </span>
+        </button>
+      </div>
     </div>
-    <div style="text-align:center; margin-top:18px;">
-      <button class="btn-main" id="go-live-btn">⚡ 全場競速</button>
-      <button class="btn-main" id="go-lb-btn2">🏆 排行榜</button>
-      <button class="btn-main" id="go-mp-btn">🔗 連線對戰</button>
+
+    <div class="home-nav">
+      <button class="neon-pink" id="go-live-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>
+        <span>全場競速</span>
+      </button>
+      <button class="neon-cyan" id="go-lb-btn2">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 4h10v5a5 5 0 0 1-10 0z"/>
+          <path d="M7 5H4v2a4 4 0 0 0 3 3.9M17 5h3v2a4 4 0 0 1-3 3.9"/>
+          <path d="M12 14v4M8.5 21h7"/>
+        </svg>
+        <span>排行榜</span>
+      </button>
+      <button class="neon-pink" id="go-mp-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h3l12 12M18 3h3v3L9 18"/>
+          <path d="M6 15l3 3-3 3-3-3zM18 15l3 3-3 3-3-3z"/>
+        </svg>
+        <span>連線對戰</span>
+      </button>
     </div>
   </section>
 
@@ -1392,10 +1552,10 @@ function onPlayerError(e){
 const MEDIA_ART_PLACEHOLDER =
   'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">' +
-    '<rect width="512" height="512" fill="#0a2447"/>' +
-    '<circle cx="256" cy="256" r="228" fill="#101827"/>' +
-    '<circle cx="256" cy="256" r="150" fill="none" stroke="#241a33" stroke-width="10"/>' +
-    '<circle cx="256" cy="256" r="88" fill="#2ee3dc"/>' +
+    '<rect width="512" height="512" fill="#1b0b33"/>' +
+    '<circle cx="256" cy="256" r="228" fill="#120823"/>' +
+    '<circle cx="256" cy="256" r="150" fill="none" stroke="#3a2159" stroke-width="10"/>' +
+    '<circle cx="256" cy="256" r="88" fill="#22e3ff"/>' +
     '<circle cx="256" cy="256" r="30" fill="#fdf4fb"/></svg>'
   );
 let mediaMaskTimers = [];
@@ -1536,7 +1696,9 @@ function onLeaveScreen(id){
 }
 
 /* ===================== 年代選擇 ===================== */
-document.querySelectorAll('#screen-era .diff-card').forEach(btn=>{
+// 綁 [data-era] 而不是某個 class：換外觀的時候 class 一定會動，
+// 綁在 class 上的話改版面就會把按鈕變成點了沒反應。
+document.querySelectorAll('#screen-era [data-era]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     selectedEra = btn.dataset.era;
     document.getElementById('era-label').textContent = ERA_LABELS[selectedEra];
@@ -2839,9 +3001,13 @@ const AVATAR_EMOJIS = [
   "🕵️","🔍","🦉","🦊","🐼","🐧","🐸","🐱",
   "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸",
 ];
+/* 這張表必須跟 worker.js 的 AVATAR_COLORS 一字不差 ——
+   伺服器只接受表內的顏色，對不上就一律換成第一個。
+   原本兩邊有五個顏色對不上，玩家選了青色、藍色、金色、綠色、紅色，
+   存下去全部變成粉紅，而且畫面不會說發生了什麼事。 */
 const AVATAR_COLORS = [
-  "#2ee3dc","#62b8ff","#ffb340","#3ddc97",
-  "#ff6b6b","#a78bfa","#fb923c","#2dd4bf",
+  "#ff5fa2","#5fd0ff","#ffcf5c","#4ade80",
+  "#f87171","#a78bfa","#fb923c","#2dd4bf",
 ];
 
 // 個人檔案一律打雲端，不跟著 API_BASE 走本機。
@@ -3354,7 +3520,7 @@ function lbRow(entry, rank, isMe){
 
   const av = document.createElement('span');
   av.className = 'avatar avatar-sm';
-  paintAvatar(av, entry.avatar || { emoji:'🎤', color:'#2ee3dc' });
+  paintAvatar(av, entry.avatar || { emoji:'🎤', color:'#ff5fa2' });
   row.appendChild(av);
 
   const name = document.createElement('div');
@@ -3919,7 +4085,7 @@ function renderLiveBoard(d){
 
     const av = document.createElement('span');
     av.className = 'avatar avatar-sm';
-    paintAvatar(av, e.avatar || { emoji:'🎤', color:'#2ee3dc' });
+    paintAvatar(av, e.avatar || { emoji:'🎤', color:'#ff5fa2' });
     row.appendChild(av);
 
     const nm = document.createElement('div');
@@ -3977,7 +4143,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-23-0752';
+const APP_VERSION = '2026-10-24-1330';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
