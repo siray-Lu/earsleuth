@@ -593,37 +593,28 @@
     text-shadow:0 1px 3px rgba(0,0,0,.65), 0 0 10px rgba(0,0,0,.35);
   }
 
-  /* 個人資料頁的返回鍵。iPhone 用「加入主畫面」開的全螢幕模式沒有上一頁鍵，
-     只靠手勢的話有機會卡在這一頁出不去，所以畫面上一定要留一個出口。 */
-  .stage-back{
-    display:flex; align-items:center; justify-content:center;
-    width:38px; height:38px; margin:0 0 10px;
-    border-radius:50%; cursor:pointer;
-    font-size:19px; line-height:1; font-family:inherit;
-    color:var(--text);
-    background:rgba(12,5,26,.72);
-    border:2px solid var(--accent);
-    box-shadow:0 0 10px rgba(34,227,255,.35);
-    transition:transform .15s ease, box-shadow .15s ease;
-  }
-  .stage-back:hover{ transform:translateY(-1px); box-shadow:0 0 16px rgba(34,227,255,.6); }
-  .stage-back:active{ transform:translateY(0); }
-
   /* ---------- 個人資料的「舞台」 ---------- */
   /* 容器鎖死成跟插畫一樣的長寬比，裡面的位置才能用百分比定 ——
      這樣手機跟桌機看到的相對位置完全一樣。 */
   .profile-stage{
     position:relative;
-    /* 破框：撐滿整個視窗寬度，不受 body 內距與 .app 最大寬度限制。
-       桌機要封頂 —— 不封的話 1920 寬會算出 3440 高的面板。 */
-    width:100vw;
-    max-width:640px;
+    /* 寬度取三者最小：
+         100vw      —— 破框撐滿螢幕寬（不受 body 內距與 .app 最大寬度限制）
+         640px      —— 桌機封頂，不封的話 1920 寬會算出 3440 高的面板
+         由高度回推 —— 面板高是寬的 1.79 倍，手機上先撞到的是高度不是寬度。
+                       不先扣掉高度的話整頁一定要滑動。
+
+       為什麼不是用 max-height 壓：寬度仍然是 100vw 的話比例就被破壞，
+       背景 cover 會重新裁切，四塊內容就對不上插畫上的位置了。
+       用 dvh 而不是 vh：手機瀏覽器的網址列會收合，vh 算的是收合前的高度。 */
+    width:min(100vw, 640px, calc((100vh - 36px) * 0.5586));
+    width:min(100vw, 640px, calc((100dvh - 36px) * 0.5586));
     margin-left:50%;
     transform:translateX(-50%);
     aspect-ratio:572 / 1024;
     border-radius:20px;
     overflow:hidden;
-    margin-bottom:14px;
+    margin-bottom:0;
     border:1px solid rgba(255,255,255,.14);
     background:url("app-bg.webp") center / cover no-repeat;
     container-type:inline-size;   /* 讓裡面可以用 cqw 當字級單位 */
@@ -930,8 +921,6 @@
       ⚠️ 這份檔案還沒同步到伺服器，目前只存在這台裝置，也還沒有接回碼。
       連上網路後重新整理就會自動補上。
     </div>
-
-    <button class="stage-back" id="profile-back-arrow" aria-label="返回">←</button>
 
     <!-- 整張插畫當底，四塊內容擺在插畫上對應的位置 -->
     <div class="profile-stage">
@@ -3896,7 +3885,6 @@ function openLeaderboard(kind, returnTo){
 document.getElementById('go-lb-btn').addEventListener('click', ()=> openLeaderboard('timed', 'screen-timed-select'));
 document.getElementById('go-lb-btn2').addEventListener('click', ()=> openLeaderboard('total', 'screen-era'));
 document.getElementById('lb-back-btn').addEventListener('click', ()=> 返回(lbReturnTo));
-document.getElementById('profile-back-arrow').addEventListener('click', ()=> 返回('screen-era'));
 
 /* ---------- 上傳成績 ---------- */
 
@@ -4430,7 +4418,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1541';
+const APP_VERSION = '2026-10-25-1613';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
