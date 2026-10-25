@@ -574,11 +574,11 @@
     pointer-events:none;
   }
   #app-bg .pic{
-    position:absolute; inset:-20px;   /* 往外擴，模糊才不會在邊緣露出透明 */
+    position:absolute; inset:0;
     background:url("app-bg.webp") center 45% / cover no-repeat;
-    /* 原圖只有 572px 寬，當滿版底圖會鬆散；模糊之後反而看不出來，
-       而且壓在底下的文字更好讀 */
-    filter:blur(3px) saturate(1.15);
+    /* 不加模糊：插畫就是插畫原本的樣子。
+       字的可讀性交給文字陰影與各自的底色去處理，不要動到圖。 */
+    filter:saturate(1.1);
   }
   /* 寬螢幕：直式的圖用 cover 會垂直裁掉大半，只剩中間一條橫切片。
      改成對齊高度置中，兩側交給底色的漸層接上去。 */
@@ -617,10 +617,11 @@
      給它一個底，不要讓玩家瞇著眼睛看。 */
   #play-hint, #live-hint{
     display:inline-block;
-    background:rgba(14,6,28,.62);
+    /* 原本靠模糊底圖來讓字浮出來，現在改成純粹把底色加深。
+       不模糊的話底下的線條很搶，.62 的透明度壓不住。 */
+    background:rgba(14,6,28,.8);
     padding:5px 14px;
     border-radius:999px;
-    backdrop-filter:blur(4px);
   }
 
   /* ---------- 個人資料的「舞台」 ---------- */
@@ -642,28 +643,6 @@
     background:url("app-bg.webp") center / cover no-repeat;
     container-type:inline-size;   /* 讓裡面可以用 cqw 當字級單位 */
   }
-  /* 插畫中間那塊大螢幕寫著「律 RHYTHM」。原本是被身分卡蓋住的，
-     身分搬到左上角之後它就露出來了 —— 而且是整頁最大的字，
-     個人資料頁掛著另一個遊戲的名字很奇怪。
-
-     試過把插畫往上推讓它出框，但那塊螢幕的下緣（原圖 310）跟角色頭頂
-     （約 320）只差十幾個像素，一裁就把頭切掉。所以改成只把那一條糊掉：
-     字沒了，燈光、音符、角色的構圖都完整留著。
-     上下用遮罩淡出，才不會變成一條突兀的橫帶。 */
-  .profile-stage::after{
-    content:""; position:absolute;
-    /* 只蓋那塊螢幕本身。原本左右拉滿整張圖，連兩側的鐵架和燈光都糊到，
-       看起來就是一條橫貫畫面的怪帶子，而不是「那塊螢幕沒對到焦」。 */
-    left:19%; right:21%; top:14%; height:19%;
-    pointer-events:none;
-    backdrop-filter:blur(12px) saturate(1.05);
-    background:rgba(18,8,35,.22);
-    border-radius:4cqw;
-    /* 四邊都淡出，邊界才不會有一圈清楚的接縫 */
-    -webkit-mask-image:radial-gradient(ellipse 72% 62% at 50% 50%, #000 55%, transparent 100%);
-    mask-image:radial-gradient(ellipse 72% 62% at 50% 50%, #000 55%, transparent 100%);
-  }
-
   /* 真的貼齊螢幕邊緣時，圓角跟邊框只會看起來像沒切乾淨 */
   @media (max-width: 688px){
     .profile-stage{ border-radius:0; border-left:none; border-right:none; }
@@ -677,8 +656,8 @@
   body[data-screen="screen-profile"]{ padding-top:8px; }
   .ps{
     position:absolute;
-    background:rgba(12,5,26,.62);
-    backdrop-filter:blur(7px);
+    /* 擋住的地方就確實擋住，不用模糊去混 */
+    background:rgba(12,5,26,.84);
     border:1px solid rgba(255,255,255,.16);
     border-radius:4cqw;
     padding:3cqw 3.6cqw;
@@ -740,8 +719,7 @@
     position:fixed; inset:0; z-index:60;
     display:flex; align-items:center; justify-content:center;
     padding:24px;
-    background:rgba(8,3,18,.72);
-    backdrop-filter:blur(3px);
+    background:rgba(8,3,18,.88);
   }
   .rc-modal[hidden]{ display:none; }
   .rc-sheet{
@@ -757,9 +735,8 @@
   /* 卡片半透明，讓插畫透一點出來；但不能太透，
      不然數字會跟背景的線條打架 */
   .profile-card{
-    background:rgba(30,12,55,.78);
+    background:rgba(30,12,55,.92);
     border:1px solid rgba(255,255,255,.1);
-    backdrop-filter:blur(6px);
   }
   .stat-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -4373,7 +4350,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1045';
+const APP_VERSION = '2026-10-25-1104';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
