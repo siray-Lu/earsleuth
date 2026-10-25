@@ -1312,7 +1312,8 @@ export class LeaderboardDO {
 ======================================================= */
 
 const LIVE_COUNTDOWN_MS = 2000;   // 準備
-const LIVE_PLAY_MS = 10000;       // 播放 + 作答窗（片段 8 秒，播完再留 2 秒作答）
+const LIVE_PLAY_MS = 10000;       // 播放 + 作答窗的上限（片段 8 秒，播完再留 2 秒）
+                                  // 場內所有人都答完的話會提早結束，不用等滿
 const LIVE_REVEAL_MS = 3000;      // 揭曉 + 看排行
 const LIVE_CLIP_SECONDS = 8;
 
@@ -1326,6 +1327,11 @@ const LIVE_TIER = "hard";
 // 超過這個時間沒來輪詢就當作離開了。Chrome 會把背景分頁的計時器降頻到約一分鐘一次，
 // 抓太短會把「只是切到別的 App」的人踢掉，連帶清掉他的分數。
 const LIVE_GHOST_MS = 90000;
+
+/* 判斷「現在還在場內」用的時間窗。前端每 700 毫秒輪詢一次，
+   給到 4 秒等於容許連掉五次 —— 比幽靈判定的 90 秒嚴格得多，
+   這樣有人關掉分頁時不會卡著其他人等滿整個作答窗。 */
+const LIVE_ACTIVE_MS = 4000;
 const LIVE_BOARD_SHOW = 20;
 
 // 全場沒人的時候不需要繼續跑回合。超過這個時間才有人回來，
@@ -1368,6 +1374,7 @@ export class LiveDO {
       players: {},
       answers: {},
       lastResults: [],
+      eligible: [],
       pending: [],
     };
   }
@@ -1428,6 +1435,8 @@ export class LiveDO {
       if (this.now() - s.phaseStartedAt < livePhaseDuration(s.phase)) break;
       this.nextPhase();
     }
+    // 全員都答完就不用等音樂播完
+    if (this.allAnswered()) this.nextPhase();
     this.pruneGhosts();
   }
 
@@ -1435,6 +1444,12 @@ export class LiveDO {
     const s = this.s;
     if (s.phase === "countdown") {
       s.phase = "play";
+      /* 這一刻在場的人就是這一回合的參賽名單。
+         之後才加入的人不列入 —— 他們這回合本來就不能作答，
+         算進來的話「全員答完」永遠不會成立。 */
+      const now = this.now();
+      s.eligible = Object.keys(s.players)
+        .filter((pid) => now - (s.players[pid].lastSeen || 0) <= LIVE_ACTIVE_MS);
     } else if (s.phase === "play") {
       this.settle();
       s.phase = "reveal";
@@ -1445,6 +1460,19 @@ export class LiveDO {
       s.phase = "countdown";
     }
     s.phaseStartedAt = this.now();
+  }
+
+  /* 參賽名單裡「現在還在輪詢」的人是不是都答完了。
+     離開的、關掉分頁的不算，不然一個人跑掉就會卡住全場。 */
+  allAnswered() {
+    const s = this.s;
+    if (!s || s.phase !== "play" || !s.q) return false;
+    const now = this.now();
+    const 在場 = (Array.isArray(s.eligible) ? s.eligible : []).filter(
+      (pid) => s.players[pid] && now - (s.players[pid].lastSeen || 0) <= LIVE_ACTIVE_MS
+    );
+    if (!在場.length) return false;   // 一個人都不在就讓計時器跑完
+    return 在場.every((pid) => s.answers[pid]);
   }
 
   // 作答窗結束，把這一回合結清
@@ -1649,6 +1677,9 @@ export class LiveDO {
       // 用時間來算速度，不採信前端送的秒數
       const ms = this.now() - s.phaseStartedAt;
       s.answers[pid] = { pos, ms, correct: pos === s.q.answerPos };
+      // 這裡也要檢查一次。只靠 advance() 的話，最後一個作答的人要等到
+      // 下一次輪詢（最多 700 毫秒）才看到揭曉，按下去會有一拍遲滯。
+      if (this.allAnswered()) this.nextPhase();
       await this.save();
       // 作答當下不回傳對錯，不然按一下就知道答案，等揭曉才公布
       return json({ ok: true, recorded: true });

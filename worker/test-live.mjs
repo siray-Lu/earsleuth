@@ -93,12 +93,23 @@ const 回合 = st.roundNo;
 結果["⑧過期回合"] = await call("/live/answer", { playerId: "p2", roundNo: 回合 - 1, pos: 正解 }).then((r) => ({ ok: r.ok, error: r.error }));
 結果["⑨亂填選項"] = await call("/live/answer", { playerId: "p2", roundNo: 回合, pos: 99 }).then((r) => ({ ok: r.ok, error: r.error }));
 
-假時間 += 5000;
-await call("/live/answer", { playerId: "p2", roundNo: 回合, pos: 正解 });
+// p1 要持續輪詢，不然會被當成已經離開場內（4 秒沒動靜就不算在場）
+假時間 += 2000;
+await call("/live/state", { playerId: "p1" });
+假時間 += 2000;
+await call("/live/state", { playerId: "p1" });
 
-假時間 += 5000;
-const rev = await call("/live/state", { playerId: "p1" });
-結果["⑩揭曉"] = {
+// 最後一個人答完 —— 作答窗還有 4 秒，但應該當場揭曉
+await call("/live/answer", { playerId: "p2", roundNo: 回合, pos: 正解 });
+const 立刻 = await call("/live/state", { playerId: "p1" });
+結果["⑩全員答完立刻揭曉"] = {
+  階段: 立刻.phase,
+  原本還剩: "4000 毫秒（作答窗 10 秒，用掉 6 秒）",
+  說明: "舊版這時還是 play，要等滿 10 秒才揭曉",
+};
+
+const rev = 立刻;
+結果["⑩b揭曉內容"] = {
   階段: rev.phase,
   公布答案: rev.question && rev.question.answerPos === 正解,
   排行: rev.board.map((b) => b.nick + " " + b.score),
@@ -182,6 +193,75 @@ const 壞掉時的總分 = 假玩家檔案["player:p1"].total;
 假時間 += 1000;
 await call("/live/state", { playerId: "p1" });
 await Promise.all(背景工作.splice(0));
+
+/* ---------- 新規則的邊界情況 ---------- */
+// 回到一個乾淨的回合：等到下一回合的作答階段
+const 到作答階段 = async (who) => {
+  for (let i = 0; i < 20; i++) {
+    const st = await call("/live/state", { playerId: who });
+    if (st.phase === "play") return st;
+    假時間 += 500;
+  }
+  throw new Error("等不到作答階段");
+};
+
+// ⑰ 中途加入的人不該卡住全場
+假時間 += 3100; await call("/live/state", { playerId: "p1" });
+const 第一輪 = await 到作答階段("p1");
+await call("/live/join", { playerId: "p9", nick: "遲到的", avatar: { emoji: "🐧", color: "#5fd0ff" } });
+await call("/live/answer", { playerId: "p1", roundNo: 第一輪.roundNo, pos: live.s.q.answerPos });
+await call("/live/answer", { playerId: "p2", roundNo: 第一輪.roundNo, pos: live.s.q.answerPos });
+const 遲到測試 = await call("/live/state", { playerId: "p1" });
+const r17 = {
+  階段: 遲到測試.phase,
+  在場人數: 遲到測試.online,
+  說明: "p9 是作答階段才進來的，不該把他算進參賽名單而卡住揭曉",
+};
+
+// ⑱ 關掉分頁的人不該卡住全場
+假時間 += 3100; await call("/live/state", { playerId: "p1" });
+const 第二輪 = await 到作答階段("p1");
+// p2 從此不再輪詢（等同關掉分頁），只有 p1 作答
+假時間 += 4500;
+await call("/live/state", { playerId: "p1" });   // p1 還在，p2 已經超過 4 秒沒動靜
+await call("/live/answer", { playerId: "p1", roundNo: live.s.roundNo, pos: live.s.q.answerPos });
+const 離線測試 = await call("/live/state", { playerId: "p1" });
+const r18 = {
+  階段: 離線測試.phase,
+  說明: "p2 超過 4 秒沒輪詢，不該讓 p1 等滿整個作答窗",
+};
+
+/* ⑲ 還有人沒答完就不能提早揭曉。
+   這裡兩個人都要持續輪詢 —— 參賽名單是在「進入作答階段的那一刻」拍的，
+   只有事後才補輪詢的話根本不會被列進去，那就測不到這條規則。 */
+假時間 += 3100;
+// p2 在前面那段 22 回合的迴圈裡完全沒輪詢，早就被當成幽靈清掉了，要重新進場
+await call("/live/join", { playerId: "p2", nick: "阿華", avatar: { emoji: "🦊", color: "#5fd0ff" } });
+await call("/live/state", { playerId: "p1" });
+await call("/live/state", { playerId: "p2" });
+for (let i = 0; i < 20; i++) {
+  const a = await call("/live/state", { playerId: "p1" });
+  await call("/live/state", { playerId: "p2" });
+  if (a.phase === "play") break;
+  假時間 += 500;
+}
+const 名單 = (live.s.eligible || []).slice().sort();
+await call("/live/answer", { playerId: "p1", roundNo: live.s.roundNo, pos: live.s.q.answerPos });
+const 還沒答完 = await call("/live/state", { playerId: "p2" });
+const r19 = {
+  參賽名單: 名單,
+  只有p1答完時的階段: 還沒答完.phase,
+  說明: "p2 在名單裡又還沒答，必須維持在作答階段",
+};
+// 補上 p2 的答案，應該當場轉揭曉
+await call("/live/answer", { playerId: "p2", roundNo: live.s.roundNo, pos: live.s.q.answerPos });
+r19.p2也答完後的階段 = (await call("/live/state", { playerId: "p1" })).phase;
+
+console.log(JSON.stringify({
+  "⑰中途加入不卡住": r17,
+  "⑱離線的人不卡住": r18,
+  "⑲還有人沒答就不提早": r19,
+}, null, 2));
 
 console.log(JSON.stringify({
   "⑮回報失敗時": {
