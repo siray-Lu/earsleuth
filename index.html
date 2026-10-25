@@ -642,6 +642,23 @@
     background:url("app-bg.webp") center / cover no-repeat;
     container-type:inline-size;   /* 讓裡面可以用 cqw 當字級單位 */
   }
+  /* 插畫中間那塊大螢幕寫著「律 RHYTHM」。原本是被身分卡蓋住的，
+     身分搬到左上角之後它就露出來了 —— 而且是整頁最大的字，
+     個人資料頁掛著另一個遊戲的名字很奇怪。
+
+     試過把插畫往上推讓它出框，但那塊螢幕的下緣（原圖 310）跟角色頭頂
+     （約 320）只差十幾個像素，一裁就把頭切掉。所以改成只把那一條糊掉：
+     字沒了，燈光、音符、角色的構圖都完整留著。
+     上下用遮罩淡出，才不會變成一條突兀的橫帶。 */
+  .profile-stage::after{
+    content:""; position:absolute; left:0; right:0; top:13%; height:22%;
+    pointer-events:none;
+    backdrop-filter:blur(14px) saturate(1.1);
+    background:linear-gradient(180deg, rgba(18,8,35,.25), rgba(18,8,35,.35), rgba(18,8,35,.25));
+    -webkit-mask-image:linear-gradient(180deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+    mask-image:linear-gradient(180deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  }
+
   /* 真的貼齊螢幕邊緣時，圓角跟邊框只會看起來像沒切乾淨 */
   @media (max-width: 688px){
     .profile-stage{ border-radius:0; border-left:none; border-right:none; }
@@ -666,6 +683,7 @@
      這四條只管「擺在哪」，長什麼樣子交給下面的內容樣式 ——
      分開寫，之後要把哪一塊換到哪個位置，改 HTML 上的 class 就好。 */
   .ps-1{ left:62%;   right:3.5%;  top:1.6%;  }   /* 右上 */
+  .ps-5{ left:3.5%;  right:52%;   top:1.6%;  }   /* 左上 */
   .ps-4{ left:20.2%; right:23.4%; top:14%;   }   /* 中央：插畫裡那塊大螢幕 */
   /* 左右兩塊的上緣對齊。標出來的框差了 2.4%，兩邊都有標題之後，
      那 2.4% 會變成「兩張卡片沒對齊」，看起來像沒做好而不是刻意的。 */
@@ -952,7 +970,7 @@
         <span class="k">🔑</span><span class="t">接回碼</span>
       </button>
 
-      <div class="ps ps-4 ps-ident">
+      <div class="ps ps-5 ps-ident">
         <span class="avatar" id="profile-avatar"></span>
         <div>
           <div class="ps-nick" id="profile-nick">-</div>
@@ -4347,7 +4365,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-0959';
+const APP_VERSION = '2026-10-25-1014';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
