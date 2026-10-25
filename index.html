@@ -929,11 +929,6 @@
         <div class="ps-row"><span class="k">參與回合</span><span class="v" id="profile-live-rounds">0</span></div>
       </div>
     </div>
-
-    <div class="actions-center">
-      <button class="btn-main" id="profile-edit-btn">改名字 / 換頭像</button>
-      <button class="btn-ghost" id="profile-back-btn">← 回遊戲</button>
-    </div>
   </section>
 
   <!-- 接回碼：平常收起來，按了舞台上那塊才打開。
@@ -3431,7 +3426,6 @@ document.getElementById('identity-chip').addEventListener('click', ()=>{
   showScreen('screen-profile');
   refreshProfileFromServer(); // 順手抓最新統計，等抓回來再重畫一次
 });
-document.getElementById('profile-back-btn').addEventListener('click', ()=> 返回('screen-era'));
 
 /* ---------- 編輯 ---------- */
 
@@ -3470,7 +3464,6 @@ function openProfileEdit(聚焦){
   });
 }
 
-document.getElementById('profile-edit-btn').addEventListener('click', ()=> openProfileEdit());
 
 // 頭像與名字各自是一個入口，按下去直接到對應的地方
 (function 綁可按的身分(){
@@ -4392,7 +4385,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1435';
+const APP_VERSION = '2026-10-25-1501';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
