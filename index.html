@@ -439,6 +439,20 @@
   }
 
   /* ---------- 結果畫面 ---------- */
+  #result-badge{
+    text-align:center;
+    margin:0 0 6px;
+  }
+  #result-badge span{
+    display:inline-block;
+    padding:5px 16px;
+    border-radius:999px;
+    font-weight:700;
+    font-size:15px;
+    color:var(--gold);
+    background:rgba(255,204,77,.12);
+    border:1px solid var(--gold);
+  }
   .score-big{
     text-align:center;
     font-size:44px;
@@ -1305,6 +1319,9 @@
 
   <!-- 結果畫面 -->
   <section id="screen-result" class="screen">
+    <!-- 破紀錄才顯示。原本擠在完成時間那一行的尾巴，整場最值得看的一件事
+         卻混在一串數字裡，所以拉出來擺在分數上面。 -->
+    <div id="result-badge" style="display:none;"></div>
     <div class="score-big" id="result-score">0 / 0</div>
     <p class="score-sub" id="result-sub">答對率</p>
     <!-- 計時挑戰才會用到：上傳成績後回報的全站名次 -->
@@ -2395,11 +2412,20 @@ function showResult(){
   // 記進個人檔案。丟出去就不管了，統計送不出去也不該擋住結算畫面。
   recordGameResult(state.score, total);
   document.getElementById('result-score').textContent = `${state.score} / ${total}`;
+  // 每一場都要先關掉，不然上一場破紀錄的徽章會留在這一場的畫面上
+  const badge = document.getElementById('result-badge');
+  badge.style.display = 'none';
+  badge.innerHTML = '';
+
   if(state.timedMode){
     const best = getTimedBest(state.timedCount);
     document.getElementById('result-sub').textContent =
       `⏱️ 完成時間 ${formatClock(state.timedElapsedMs)}　（答對 ${state.score} 題，共作答 ${total} 題）` +
-      (state.timedIsNewRecord ? '　🎉 新紀錄！' : `　最佳紀錄 ${formatDuration(best)}`);
+      (state.timedIsNewRecord ? '' : `　最佳紀錄 ${formatDuration(best)}`);
+    if(state.timedIsNewRecord){
+      badge.innerHTML = '<span>🎉 新紀錄！</span>';
+      badge.style.display = 'block';
+    }
   } else {
     document.getElementById('result-sub').textContent = `答對率 ${Math.round(state.score/total*100)}% · 難度：${DIFFICULTIES[state.diffKey].label}`;
   }
@@ -3918,7 +3944,7 @@ async function submitTimedScore(era, count, ms){
 
     box.style.display = 'block';
     if(d.improved && d.rank){
-      box.innerHTML = '<span style="color:var(--gold); font-weight:700; font-size:17px;">🏆 全站第 '
+      box.innerHTML = '<span style="color:var(--gold); font-weight:700; font-size:17px;">🏆 第 '
         + d.rank + ' 名</span>'
         + '<div style="color:var(--muted); font-size:12px; margin-top:4px;">' + ERA_LABELS[era] + ' · ' + count + ' 題</div>';
     }else if(d.myRank){
@@ -4404,7 +4430,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1538';
+const APP_VERSION = '2026-10-25-1541';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
