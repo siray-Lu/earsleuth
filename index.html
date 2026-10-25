@@ -628,15 +628,31 @@
      這樣手機跟桌機看到的相對位置完全一樣。 */
   .profile-stage{
     position:relative;
-    width:100%;
+    /* 破框：撐滿整個視窗寬度，不受 body 內距與 .app 最大寬度限制。
+       桌機要封頂 —— 不封的話 1920 寬會算出 3440 高的面板。 */
+    width:100vw;
+    max-width:640px;
+    margin-left:50%;
+    transform:translateX(-50%);
     aspect-ratio:572 / 1024;
     border-radius:20px;
     overflow:hidden;
-    margin:0 0 18px;
+    margin-bottom:14px;
     border:1px solid rgba(255,255,255,.14);
     background:url("app-bg.webp") center / cover no-repeat;
     container-type:inline-size;   /* 讓裡面可以用 cqw 當字級單位 */
   }
+  /* 真的貼齊螢幕邊緣時，圓角跟邊框只會看起來像沒切乾淨 */
+  @media (max-width: 688px){
+    .profile-stage{ border-radius:0; border-left:none; border-right:none; }
+  }
+
+  /* 這一頁的標題與身分膠囊收起來：名字就寫在插畫中間那塊，重複了，
+     而它們佔掉上面將近 120px，面板就滿不了版。 */
+  body[data-screen="screen-profile"] h1,
+  body[data-screen="screen-profile"] .hero-deco,
+  body[data-screen="screen-profile"] .identity-bar{ display:none !important; }
+  body[data-screen="screen-profile"]{ padding-top:8px; }
   .ps{
     position:absolute;
     background:rgba(12,5,26,.62);
@@ -649,7 +665,7 @@
   /* 四個位置：直接對應插畫上標出來的四個框。
      這四條只管「擺在哪」，長什麼樣子交給下面的內容樣式 ——
      分開寫，之後要把哪一塊換到哪個位置，改 HTML 上的 class 就好。 */
-  .ps-1{ left:45%;   right:4.1%;  top:1.3%;  }   /* 右上 */
+  .ps-1{ left:62%;   right:3.5%;  top:1.6%;  }   /* 右上 */
   .ps-4{ left:20.2%; right:23.4%; top:14%;   }   /* 中央：插畫裡那塊大螢幕 */
   /* 左右兩塊的上緣對齊。標出來的框差了 2.4%，兩邊都有標題之後，
      那 2.4% 會變成「兩張卡片沒對齊」，看起來像沒做好而不是刻意的。 */
@@ -680,8 +696,9 @@
     box-shadow:0 0 3cqw rgba(34,227,255,.35), 0 2cqw 5cqw rgba(0,0,0,.35);
   }
   .ps-rc:hover{ box-shadow:0 0 5cqw rgba(34,227,255,.6), 0 2cqw 5cqw rgba(0,0,0,.35); }
-  .ps-rc .t{ font-size:4.4cqw; font-weight:800; letter-spacing:0.3cqw; }
-  .ps-rc .k{ font-size:4cqw; }
+  .ps-rc{ padding:2.2cqw 2.4cqw; gap:1.2cqw; }
+  .ps-rc .t{ font-size:3.4cqw; font-weight:800; letter-spacing:0.2cqw; }
+  .ps-rc .k{ font-size:3.2cqw; }
 
   .ps-cap{ font-size:3cqw; color:var(--muted); text-align:center; margin-bottom:1.4cqw; }
   .ps-row{
@@ -1842,6 +1859,8 @@ function showScreen(id){
 
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  // 寫在 body 上，讓 CSS 能針對特定畫面調整版面（例如個人資料要滿版）
+  document.body.dataset.screen = id;
 
   if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
   // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
@@ -4328,7 +4347,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-0928';
+const APP_VERSION = '2026-10-25-0959';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
