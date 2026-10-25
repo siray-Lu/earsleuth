@@ -24,7 +24,12 @@
 <meta name="twitter:image" content="https://siray-lu.github.io/earsleuth/og-image.png">
 
 <!-- 加到手機主畫面後會全螢幕開啟，看起來就像一般 App -->
-<link rel="manifest" href="manifest.json">
+<!-- 網址後面掛版本號有兩個作用：
+     一是繞過快取（GitHub Pages 給 manifest 的 Cache-Control 是 600 秒，
+     Chrome 對 manifest 的快取又更黏，不換網址有可能一直讀到舊的）；
+     二是 manifest 的網址本身也是 Chrome 辨識「這是哪個應用程式」的依據之一，
+     換掉等於再加一道保險，確保它不會對上先前那筆壞掉的安裝紀錄。 -->
+<link rel="manifest" href="manifest.json?v=2">
 <meta name="theme-color" content="#1b0b33">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -4418,7 +4423,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1613';
+const APP_VERSION = '2026-10-25-1633';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
