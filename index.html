@@ -568,60 +568,15 @@
   .color-opt:hover{ transform:scale(1.12); }
   .color-opt.sel{ border-color:var(--text); }
 
-  /* ---------- 插畫底圖（全站） ---------- */
-  #app-bg{
-    position:fixed; inset:0; z-index:-1;
-    pointer-events:none;
-  }
-  #app-bg .pic{
-    position:absolute; inset:0;
-    background:url("app-bg.webp") center 45% / cover no-repeat;
-    /* 不加模糊：插畫就是插畫原本的樣子。
-       字的可讀性交給文字陰影與各自的底色去處理，不要動到圖。 */
-    filter:saturate(1.1);
-  }
-  /* 寬螢幕：直式的圖用 cover 會垂直裁掉大半，只剩中間一條橫切片。
-     改成對齊高度置中，兩側交給底色的漸層接上去。 */
-  @media (min-aspect-ratio: 3/4){
-    #app-bg .pic{
-      inset:0;
-      background-size:auto 100%;
-      background-position:center;
-    }
-  }
-  #app-bg .veil{
-    position:absolute; inset:0;
-    /* 上緣壓到幾乎不透明，一路維持到 26%：
-       圖裡那塊大螢幕寫著「律 RHYTHM」，不壓掉的話，內容短的頁面
-       （例如排行榜）會在標題正上方清楚露出那個「律」字，
-       變成畫面上同時有兩個遊戲名字。那裡本來就是標題的位置，
-       壓深反而讓霓虹字更好看。 */
-    /* 「律」那塊螢幕在原圖的 17%~30% 高度，所以強區要一路撐到 34%
-       才蓋得乾淨 —— 壓到 26% 就放掉的話，內容短的頁面還會看到殘影。 */
-    background:
-      linear-gradient(180deg,
-        rgba(18,8,35,.97) 0%,
-        rgba(18,8,35,.96) 34%,
-        rgba(18,8,35,.78) 47%,
-        rgba(18,8,35,.60) 60%,
-        rgba(18,8,35,.64) 100%);
-  }
+  /* 插畫只用在個人資料頁（.profile-stage），其他頁面維持霓虹紫的漸層底。
+     整站鋪插畫的話，為了讓字還讀得到就得把圖壓暗 —— 那等於整張圖都不是
+     原本的樣子。只留在個人資料頁就沒有這個矛盾：那一頁的內容各自有底，
+     圖可以完全不動。 */
 
-  /* 直接壓在插畫上的文字需要一點分離，不然會跟背景的霓虹線條糊在一起。
-     卡片裡的字也會吃到這個陰影，不影響可讀性。 */
-  .screen, .identity-bar{
+  /* 個人資料頁的字是直接壓在插畫上的，需要一點分離才不會跟畫面裡的
+     霓虹線條糊在一起。其他頁面底是純色漸層，不需要。 */
+  .profile-stage{
     text-shadow:0 1px 3px rgba(0,0,0,.65), 0 0 10px rgba(0,0,0,.35);
-  }
-  /* 這兩行是遊戲進行中的狀態（還剩幾秒、有沒有聲音、該不該作答），
-     用的又是淺紫色的次要字色，壓在電路板那片背景上特別難讀 ——
-     給它一個底，不要讓玩家瞇著眼睛看。 */
-  #play-hint, #live-hint{
-    display:inline-block;
-    /* 原本靠模糊底圖來讓字浮出來，現在改成純粹把底色加深。
-       不模糊的話底下的線條很搶，.62 的透明度壓不住。 */
-    background:rgba(14,6,28,.8);
-    padding:5px 14px;
-    border-radius:999px;
   }
 
   /* ---------- 個人資料的「舞台」 ---------- */
@@ -731,12 +686,6 @@
   .profile-card{
     background:var(--card); border-radius:16px; padding:18px;
     margin-bottom:16px;
-  }
-  /* 卡片半透明，讓插畫透一點出來；但不能太透，
-     不然數字會跟背景的線條打架 */
-  .profile-card{
-    background:rgba(30,12,55,.92);
-    border:1px solid rgba(255,255,255,.1);
   }
   .stat-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -848,8 +797,6 @@
 </head>
 <body>
 <div id="alert-bar" style="display:none;"></div>
-<!-- 插畫底圖。擺在 .app 外面，才蓋得滿整個畫面 -->
-<div id="app-bg" aria-hidden="true"><div class="pic"></div><div class="veil"></div></div>
 <div class="app">
   <!-- 標題後面的黑膠、耳機與波形。純裝飾，pointer-events 關掉免得擋住點擊 -->
   <div class="hero-deco" aria-hidden="true">
@@ -4350,7 +4297,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1104';
+const APP_VERSION = '2026-10-25-1121';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
