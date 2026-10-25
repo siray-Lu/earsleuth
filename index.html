@@ -638,6 +638,11 @@
     padding:2.4cqw 2.8cqw;
   }
   .ps-ident .avatar{ width:11.5cqw; height:11.5cqw; font-size:5.8cqw; border-width:0.5cqw; }
+  /* 頭像與名字自己就是按鈕。沒有任何提示的話沒人會知道可以按，
+     所以滑過去要有反應，鍵盤 focus 也要看得出來。 */
+  .tappable{ cursor:pointer; transition:filter .15s ease, opacity .15s ease; }
+  .tappable:hover{ filter:brightness(1.25); }
+  .tappable:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
   /* 這兩行都不換行：框是扁的，一換行就會把下面那行擠出框外 */
   .ps-nick{
     font-weight:700; font-size:3.8cqw; line-height:1.2;
@@ -903,9 +908,9 @@
       </button>
 
       <div class="ps ps-5 ps-ident">
-        <span class="avatar" id="profile-avatar"></span>
+        <span class="avatar tappable" id="profile-avatar" role="button" tabindex="0" title="換頭像"></span>
         <div>
-          <div class="ps-nick" id="profile-nick">-</div>
+          <div class="ps-nick tappable" id="profile-nick" role="button" tabindex="0" title="改名字">-</div>
           <div class="ps-since" id="profile-since">-</div>
         </div>
       </div>
@@ -1815,7 +1820,60 @@ function showScreen(id){
   if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
   // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
   if(typeof renderIdentity === 'function') renderIdentity();
+
+  記住畫面(id);
 }
+
+/* ---------- 手機的上一頁鍵 ----------
+   不處理的話，按上一頁會直接離開整個遊戲 —— 玩家只是想退回上一個畫面。
+   做法是每切一次畫面就往瀏覽器的歷史推一筆，上一頁就自然退回去。 */
+
+// 結算畫面是「取代」而不是「推一筆」：不取代的話，從結算按上一頁會退回
+// 那一局已經結束的遊戲畫面，看起來像壞掉。取代之後會直接退回選難度。
+const 取代而非新增 = ['screen-result', 'screen-mp-result'];
+let 回上一頁中 = false;
+let 歷史深度 = 0;     // 我們自己往歷史推了幾筆，用來判斷還退不退得回去
+
+/* 畫面上的返回鍵統一走這裡：有得退就退一筆，跟手機的上一頁同一條路。
+   直接用 showScreen 切的話歷史只會長不會縮，按了「取消」再按上一頁
+   就會回到剛剛取消掉的那一頁。 */
+function 返回(保底畫面){
+  if(歷史深度 > 0){ history.back(); return; }
+  showScreen(保底畫面);
+}
+
+function 記住畫面(id){
+  if(回上一頁中) return;          // 這次切換本來就是上一頁觸發的，不要再推一筆
+  try{
+    const 目前 = history.state;
+    if(目前 && 目前.screen === id && !目前.modal) return;   // 同一頁重複呼叫，不要堆
+    if(!目前 || 取代而非新增.includes(id)) history.replaceState({ screen:id }, '');
+    else { history.pushState({ screen:id }, ''); 歷史深度++; }
+  }catch(e){ /* 歷史 API 不能用就算了，頂多回到原本的行為 */ }
+}
+
+window.addEventListener('popstate', e=>{
+  const 狀態 = e.state || { screen:'screen-era' };
+  回上一頁中 = true;
+  try{
+    const 彈窗 = document.getElementById('rc-modal');
+    if(狀態.modal === 'rc'){
+      if(彈窗) 彈窗.hidden = false;
+      return;
+    }
+    if(彈窗 && !彈窗.hidden) 彈窗.hidden = true;
+    歷史深度 = Math.max(0, 歷史深度 - 1);
+    const 目標 = document.getElementById(狀態.screen) ? 狀態.screen : 'screen-era';
+    const 現在 = document.querySelector('.screen.active');
+    if(!現在 || 現在.id !== 目標){
+      // 退回個人資料時要重畫。不畫的話，剛改完名字退回來看到的還是舊的
+      if(目標 === 'screen-profile' && typeof renderProfileScreen === 'function') renderProfileScreen();
+      showScreen(目標);
+    }
+  } finally {
+    回上一頁中 = false;
+  }
+});
 
 // 離開某個畫面時該收拾的東西。不收的話，倒數會在背景繼續跑完，
 // 然後在完全不相干的畫面上突然放出音樂 —— 而那一題也就白白浪費掉了。
@@ -1841,8 +1899,16 @@ function onLeaveScreen(id){
 
 /* ---------- 接回碼的彈窗 ---------- */
 const rcModal = document.getElementById('rc-modal');
-function openRc(){ rcModal.hidden = false; }
-function closeRc(){ rcModal.hidden = true; }
+function openRc(){
+  rcModal.hidden = false;
+  // 多推一筆，這樣彈窗開著時按上一頁是關掉彈窗，而不是跳離這一頁
+  try{ history.pushState({ screen:'screen-profile', modal:'rc' }, ''); }catch(e){}
+}
+function closeRc(){
+  rcModal.hidden = true;
+  // 把剛才為了彈窗推進去的那一筆退掉，不然要按兩次上一頁才離得開這一頁
+  try{ if(history.state && history.state.modal === 'rc') history.back(); }catch(e){}
+}
 document.getElementById('profile-rc-btn').addEventListener('click', openRc);
 document.getElementById('rc-close-btn').addEventListener('click', closeRc);
 // 點外面的暗底也關掉（只認暗底本身，點到裡面的內容不算）
@@ -2484,7 +2550,7 @@ document.getElementById('go-mp-btn').addEventListener('click', ()=>{
     mp.shareUrl = url;
   }).catch(()=>{ mp.shareUrl = location.origin + location.pathname; });
 });
-document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> showScreen('screen-era'));
+document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> 返回('screen-era'));
 
 document.getElementById('mp-create-btn').addEventListener('click', createRoom);
 
@@ -3308,7 +3374,7 @@ document.getElementById('setup-restore-btn').addEventListener('click', ()=>{
   document.getElementById('restore-error').textContent = '';
   showScreen('screen-profile-restore');
 });
-document.getElementById('restore-back-btn').addEventListener('click', ()=> showScreen('screen-profile-setup'));
+document.getElementById('restore-back-btn').addEventListener('click', ()=> 返回('screen-profile-setup'));
 
 document.getElementById('restore-go-btn').addEventListener('click', async ()=>{
   const btn = document.getElementById('restore-go-btn');
@@ -3365,7 +3431,7 @@ document.getElementById('identity-chip').addEventListener('click', ()=>{
   showScreen('screen-profile');
   refreshProfileFromServer(); // 順手抓最新統計，等抓回來再重畫一次
 });
-document.getElementById('profile-back-btn').addEventListener('click', ()=> showScreen('screen-era'));
+document.getElementById('profile-back-btn').addEventListener('click', ()=> 返回('screen-era'));
 
 /* ---------- 編輯 ---------- */
 
@@ -3377,7 +3443,9 @@ function refreshEditPreview(){
   document.getElementById('edit-preview-nick').textContent = nick || '無名氏';
 }
 
-document.getElementById('profile-edit-btn').addEventListener('click', ()=>{
+/* 聚焦：'nick' 從名字進來（直接把游標放進輸入框），
+   'avatar' 從頭像進來（捲到頭像那一區），不帶就照舊從頭顯示。 */
+function openProfileEdit(聚焦){
   editDraft.emoji = profile.avatar.emoji;
   editDraft.color = profile.avatar.color;
   document.getElementById('edit-nick').value = profile.nick;
@@ -3389,12 +3457,39 @@ document.getElementById('profile-edit-btn').addEventListener('click', ()=>{
   );
   refreshEditPreview();
   showScreen('screen-profile-edit');
-});
+
+  // 等畫面切過去、版面算好才動游標與捲動，不然位置會算在舊畫面上
+  requestAnimationFrame(()=>{
+    if(聚焦 === 'nick'){
+      const el = document.getElementById('edit-nick');
+      el.focus(); el.select();
+      el.scrollIntoView({ block:'center' });
+    } else if(聚焦 === 'avatar'){
+      document.getElementById('edit-emoji-grid').scrollIntoView({ block:'center' });
+    }
+  });
+}
+
+document.getElementById('profile-edit-btn').addEventListener('click', ()=> openProfileEdit());
+
+// 頭像與名字各自是一個入口，按下去直接到對應的地方
+(function 綁可按的身分(){
+  const 綁 = (id, 聚焦) => {
+    const el = document.getElementById(id);
+    el.addEventListener('click', ()=> openProfileEdit(聚焦));
+    // role=button 的元素要自己處理鍵盤，瀏覽器不會幫忙
+    el.addEventListener('keydown', e=>{
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openProfileEdit(聚焦); }
+    });
+  };
+  綁('profile-avatar', 'avatar');
+  綁('profile-nick', 'nick');
+})();
 
 document.getElementById('edit-nick').addEventListener('input', refreshEditPreview);
 document.getElementById('edit-cancel-btn').addEventListener('click', ()=>{
   renderProfileScreen();
-  showScreen('screen-profile');
+  返回('screen-profile');
 });
 
 document.getElementById('edit-save-btn').addEventListener('click', async ()=>{
@@ -3763,7 +3858,7 @@ function openLeaderboard(kind, returnTo){
 
 document.getElementById('go-lb-btn').addEventListener('click', ()=> openLeaderboard('timed', 'screen-timed-select'));
 document.getElementById('go-lb-btn2').addEventListener('click', ()=> openLeaderboard('total', 'screen-era'));
-document.getElementById('lb-back-btn').addEventListener('click', ()=> showScreen(lbReturnTo));
+document.getElementById('lb-back-btn').addEventListener('click', ()=> 返回(lbReturnTo));
 
 /* ---------- 上傳成績 ---------- */
 
@@ -4297,7 +4392,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1121';
+const APP_VERSION = '2026-10-25-1435';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
