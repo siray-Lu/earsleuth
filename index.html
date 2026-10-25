@@ -29,7 +29,7 @@
      Chrome 對 manifest 的快取又更黏，不換網址有可能一直讀到舊的）；
      二是 manifest 的網址本身也是 Chrome 辨識「這是哪個應用程式」的依據之一，
      換掉等於再加一道保險，確保它不會對上先前那筆壞掉的安裝紀錄。 -->
-<link rel="manifest" href="manifest.json?v=2">
+<link rel="manifest" href="app.webmanifest">
 <meta name="theme-color" content="#1b0b33">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -4423,7 +4423,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1633';
+const APP_VERSION = '2026-10-25-1649';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

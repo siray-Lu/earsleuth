@@ -9,9 +9,9 @@
 */
 
 // 換版本號會讓 activate 把舊的整個刪掉 —— 之前那份已經被查詢字串灌肥了
-const CACHE = 'earsleuth-v3';
+const CACHE = 'earsleuth-v4';
 // 只留最低限度的殼，離線時至少開得起來
-const SHELL = ['./', './index.html', './songs.js', './manifest.json', './icon-192.png', './app-bg.webp'];
+const SHELL = ['./', './index.html', './songs.js', './app.webmanifest', './icon-192.png', './app-bg.webp'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
