@@ -30,6 +30,16 @@
      二是 manifest 的網址本身也是 Chrome 辨識「這是哪個應用程式」的依據之一，
      換掉等於再加一道保險，確保它不會對上先前那筆壞掉的安裝紀錄。 -->
 <link rel="manifest" href="app.webmanifest">
+<script>
+  /* 這段刻意放在 head：beforeinstallprompt 有可能在主程式載入之前就發出來，
+     晚一步掛監聽器就永遠接不到，安裝按鈕也就不會出現。 */
+  window.__deferredInstall = null;
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();          // 擋掉瀏覽器自己的提示，改由我們決定時機
+    window.__deferredInstall = e;
+    document.dispatchEvent(new Event('installable'));
+  });
+</script>
 <meta name="theme-color" content="#1b0b33">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -170,6 +180,9 @@
   .era-card .a{ display:block; font-size:13px; color:#cdb6ef; margin-top:1px; }
   .neon-cyan{ --line:#22e3ff; --glow:34,227,255; }
   .neon-pink{ --line:#ff4ded; --glow:255,77,237; }
+
+  .install-wrap{ text-align:center; margin:0 0 12px; }
+  .install-wrap[hidden]{ display:none; }
 
   /* 底下三個入口 */
   .home-nav{
@@ -1042,6 +1055,11 @@
           </span>
         </button>
       </div>
+    </div>
+
+    <!-- 只有在瀏覽器說「可以安裝」而且目前不是以 App 開啟時才會出現 -->
+    <div class="install-wrap" id="install-wrap" hidden>
+      <button class="btn-ghost" id="install-btn">📲 安裝成應用程式</button>
     </div>
 
     <div class="home-nav">
@@ -1938,6 +1956,41 @@ document.getElementById('rc-close-btn').addEventListener('click', closeRc);
 // 點外面的暗底也關掉（只認暗底本身，點到裡面的內容不算）
 rcModal.addEventListener('click', e=>{ if(e.target === rcModal) closeRc(); });
 document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && !rcModal.hidden) closeRc(); });
+
+/* ---------- 安裝成應用程式 ----------
+   走自己的按鈕而不是瀏覽器 ⋮ 選單：選單那條路會先跳出「安裝並建立捷徑」，
+   而瀏覽器一旦誤判成「已安裝」就卡在那裡。這裡直接呼叫安裝流程，繞過它。 */
+(function 安裝按鈕(){
+  const wrap = document.getElementById('install-wrap');
+  const btn = document.getElementById('install-btn');
+  // 已經是以 App 開啟的話就沒必要再裝一次
+  const 已經是App = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                    || window.navigator.standalone === true;
+
+  function 更新顯示(){
+    wrap.hidden = !(window.__deferredInstall && !已經是App);
+  }
+  更新顯示();
+  document.addEventListener('installable', 更新顯示);
+
+  btn.addEventListener('click', async ()=>{
+    const e = window.__deferredInstall;
+    if(!e) return;
+    // 這個事件只能用一次，先收起來免得連按兩下
+    window.__deferredInstall = null;
+    wrap.hidden = true;
+    try{
+      e.prompt();
+      await e.userChoice;
+    }catch(err){ console.warn('install prompt failed', err); }
+  });
+
+  // 裝好之後按鈕就該消失
+  window.addEventListener('appinstalled', ()=>{
+    window.__deferredInstall = null;
+    wrap.hidden = true;
+  });
+})();
 
 /* ===================== 年代選擇 ===================== */
 // 綁 [data-era] 而不是某個 class：換外觀的時候 class 一定會動，
@@ -4423,7 +4476,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-25-1649';
+const APP_VERSION = '2026-10-26-0821';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
