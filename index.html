@@ -181,6 +181,24 @@
   .neon-cyan{ --line:#22e3ff; --glow:34,227,255; }
   .neon-pink{ --line:#ff4ded; --glow:255,77,237; }
 
+  /* 帳號選擇畫面 */
+  .acc-list{ display:flex; flex-direction:column; gap:10px; margin:0 0 14px; }
+  .acc-row{
+    display:flex; align-items:center; gap:12px; width:100%;
+    padding:12px 14px; border-radius:16px; cursor:pointer;
+    background:var(--card); border:1px solid rgba(255,255,255,.1);
+    color:var(--text); font-family:inherit; text-align:left;
+    -webkit-user-select:none; user-select:none;
+    -webkit-touch-callout:none;        /* 長按時不要跳出系統選單 */
+    transition:border-color .15s ease, transform .1s ease;
+  }
+  .acc-row:hover{ border-color:var(--accent); }
+  .acc-row:active{ transform:scale(.99); }
+  .acc-row.current{ border-color:var(--accent); box-shadow:0 0 10px rgba(34,227,255,.25); }
+  .acc-row .nick{ font-weight:700; font-size:17px; }
+  .acc-row .meta{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .acc-hint{ text-align:center; color:var(--muted); font-size:12px; margin:0 0 16px; }
+
   /* 登出 / 切換帳號。比註銷溫和，所以用一般的樣式。 */
   .account-actions{ display:flex; gap:10px; justify-content:center; margin:20px 0 0; flex-wrap:wrap; }
   .account-panel{
@@ -969,6 +987,38 @@
     </div>
   </section>
 
+  <!-- 選擇帳號：登出之後停在這裡，點一下就回得去，不需要接回碼 -->
+  <section id="screen-accounts" class="screen">
+    <p class="field-label" style="font-size:15px; margin-bottom:16px;">選擇要使用的帳號</p>
+    <div class="acc-list" id="acc-list"></div>
+    <p class="acc-hint">長按帳號可以把它從這台裝置移除</p>
+
+    <!-- 移除確認。會用到接回碼，因為移除之後只能靠它回來 -->
+    <div class="account-panel" id="acc-remove-panel" hidden>
+      <h4>從這台裝置移除</h4>
+      <p id="acc-remove-who">-</p>
+      <p style="margin-bottom:6px;">帳號本身不會被刪除，但這台裝置會忘記它。
+        要再回到這個帳號，<b>只能靠這串接回碼</b>：</p>
+      <div class="rc-code" id="acc-remove-rc">----</div>
+      <div class="warn-note" style="margin-top:10px;">
+        沒抄下這串碼就回不來了 —— 我們沒有你的信箱也沒有密碼。
+      </div>
+      <label class="ack-row">
+        <input type="checkbox" id="acc-remove-ack">
+        <span>我已經把這串接回碼抄下來收好了</span>
+      </label>
+      <div class="actions-center" style="margin-top:4px;">
+        <button class="btn-main" id="acc-remove-go" disabled>移除</button>
+        <button class="btn-ghost" id="acc-remove-cancel">取消</button>
+      </div>
+    </div>
+
+    <div class="actions-center">
+      <button class="btn-main" id="acc-new-btn">建立新檔案</button>
+      <button class="btn-ghost" id="acc-restore-btn">用接回碼接回</button>
+    </div>
+  </section>
+
   <!-- 用接回碼還原 -->
   <section id="screen-profile-restore" class="screen">
     <p class="field-label" style="font-size:15px; margin-bottom:18px;">
@@ -1066,27 +1116,6 @@
     <div class="account-actions">
       <button class="btn-ghost" id="logout-btn">登出帳號</button>
       <button class="btn-ghost" id="switch-btn">切換帳號</button>
-    </div>
-
-    <!-- 登出與切換共用這一塊：兩者都會清掉本機資料，都必須先確認接回碼 -->
-    <div class="account-panel" id="logout-panel" hidden>
-      <h4 id="logout-title">登出帳號</h4>
-      <p id="logout-desc">這台裝置上的資料會被清掉，但帳號還留在伺服器上。</p>
-      <p style="margin-bottom:6px;">要回到這個帳號，<b>只能靠這串接回碼</b>：</p>
-      <div class="rc-code" id="logout-rc">----</div>
-      <div class="warn-note" style="margin-top:10px;">
-        沒抄下這串碼就回不來了 —— 我們沒有你的信箱也沒有密碼，
-        而且沒有任何方法可以事後查出來。
-      </div>
-      <label class="ack-row">
-        <input type="checkbox" id="logout-ack">
-        <span>我已經把這串接回碼抄下來收好了</span>
-      </label>
-      <p id="logout-error" style="color:var(--red); font-size:13px; min-height:18px; margin:4px 0 0;"></p>
-      <div class="actions-center" style="margin-top:4px;">
-        <button class="btn-main" id="logout-go" disabled>登出</button>
-        <button class="btn-ghost" id="logout-cancel">取消</button>
-      </div>
     </div>
 
     <div class="danger-zone">
@@ -2047,61 +2076,123 @@ function onLeaveScreen(id){
   }
 }
 
-/* ---------- 登出帳號 / 切換帳號 ----------
-   兩者其實是同一件事（清掉本機檔案），差別只在清完停在哪一頁。
-   但這個遊戲沒有密碼也沒有信箱，接回碼就是帳號本身 —— 沒抄就回不來，
-   所以強制先把碼攤開來，而且要勾選確認才放行。 */
-(function 登出與切換(){
-  const 面板 = document.getElementById('logout-panel');
-  const 勾選 = document.getElementById('logout-ack');
-  const 執行 = document.getElementById('logout-go');
-  const 錯誤 = document.getElementById('logout-error');
-  let 清完去哪 = 'setup';     // 'setup' = 登出，'restore' = 切換帳號
+/* ---------- 帳號選擇畫面 ---------- */
+(function 帳號選擇(){
+  const 清單 = document.getElementById('acc-list');
+  const 面板 = document.getElementById('acc-remove-panel');
+  const 勾選 = document.getElementById('acc-remove-ack');
+  const 執行 = document.getElementById('acc-remove-go');
+  let 要移除的 = null;
 
-  function 收起(){
+  function 收起移除面板(){
     面板.hidden = true;
     勾選.checked = false;
     執行.disabled = true;
-    錯誤.textContent = '';
+    要移除的 = null;
   }
 
-  function 展開(模式){
-    if(!profile) return;
-    清完去哪 = 模式;
-    const 切換 = 模式 === 'restore';
-    document.getElementById('logout-title').textContent = 切換 ? '切換帳號' : '登出帳號';
-    document.getElementById('logout-desc').textContent = 切換
-      ? '這台裝置上目前這個帳號的資料會被清掉，接著可以輸入另一組接回碼。'
-      : '這台裝置上的資料會被清掉，但帳號還留在伺服器上。';
-    執行.textContent = 切換 ? '清除並切換' : '登出';
-    // 還沒同步到伺服器的檔案沒有接回碼，登出就等於永久遺失
-    document.getElementById('logout-rc').textContent = profile.recoveryCode || '（尚未產生）';
-    錯誤.textContent = profile.recoveryCode ? ''
-      : '這個檔案還沒同步到伺服器，沒有接回碼 —— 現在登出就再也接不回來了。';
-    面板.hidden = false;
-    勾選.checked = false;
-    執行.disabled = true;
-    面板.scrollIntoView({ block:'center' });
+  /* 長按。手機沒有右鍵，而這個動作不該做成常駐按鈕（太容易誤觸），
+     所以用長按；桌機則接右鍵，兩邊都有辦法叫出來。 */
+  function 綁長按(el, cb){
+    let 計時 = null;
+    const 開始 = ()=>{ el.dataset.longPressed = ''; 計時 = setTimeout(()=>{ 計時 = null; el.dataset.longPressed = '1'; cb(); }, 550); };
+    const 取消 = ()=>{ if(計時){ clearTimeout(計時); 計時 = null; } };
+    el.addEventListener('touchstart', 開始, { passive:true });
+    ['touchend','touchmove','touchcancel'].forEach(e=>el.addEventListener(e, 取消));
+    el.addEventListener('mousedown', 開始);
+    ['mouseup','mouseleave'].forEach(e=>el.addEventListener(e, 取消));
+    el.addEventListener('contextmenu', e=>{ e.preventDefault(); 取消(); el.dataset.longPressed = '1'; cb(); });
   }
 
-  document.getElementById('logout-btn').addEventListener('click', ()=> 展開('setup'));
-  document.getElementById('switch-btn').addEventListener('click', ()=> 展開('restore'));
-  document.getElementById('logout-cancel').addEventListener('click', 收起);
+  window.renderAccounts = function(){
+    收起移除面板();
+    const 帳號們 = loadAccounts();
+    清單.innerHTML = '';
+    document.querySelector('.acc-hint').style.display = 帳號們.length ? '' : 'none';
+    for(const a of 帳號們){
+      const row = document.createElement('button');
+      row.className = 'acc-row' + (profile && profile.id === a.id ? ' current' : '');
+      const av = document.createElement('span');
+      av.className = 'avatar avatar-md';
+      paintAvatar(av, a.avatar || { emoji:'🎤', color:'#ff5fa2' });
+      const 文 = document.createElement('div');
+      const n = document.createElement('div'); n.className = 'nick'; n.textContent = a.nick;
+      const m = document.createElement('div'); m.className = 'meta';
+      const st = a.stats || {};
+      m.textContent = (profile && profile.id === a.id ? '目前使用中 · ' : '')
+        + '玩過 ' + (st.games || 0) + ' 場';
+      文.appendChild(n); 文.appendChild(m);
+      row.appendChild(av); row.appendChild(文);
+
+      row.addEventListener('click', ()=>{
+        // 長按剛觸發過的話，放開手指產生的這一下點擊要忽略掉
+        if(row.dataset.longPressed === '1'){ row.dataset.longPressed = ''; return; }
+        if(profile && profile.id === a.id){ showScreen('screen-era'); return; }
+        profile = JSON.parse(JSON.stringify(a));
+        saveLocalProfile();
+        // 整頁重載，把上一個帳號的輪詢、對局、快取身分全部歸零
+        location.replace(location.pathname);
+      });
+
+      綁長按(row, ()=>{
+        要移除的 = a;
+        document.getElementById('acc-remove-who').textContent = '「' + a.nick + '」會從這台裝置的清單上消失。';
+        document.getElementById('acc-remove-rc').textContent = a.recoveryCode || '（這個檔案還沒有接回碼）';
+        勾選.checked = false;
+        執行.disabled = true;
+        面板.hidden = false;
+        面板.scrollIntoView({ block:'center' });
+      });
+
+      清單.appendChild(row);
+    }
+  };
+
   勾選.addEventListener('change', ()=>{ 執行.disabled = !勾選.checked; });
+  document.getElementById('acc-remove-cancel').addEventListener('click', 收起移除面板);
 
-  執行.addEventListener('click', async ()=>{
-    執行.disabled = true;
-    執行.textContent = '處理中…';
+  執行.addEventListener('click', ()=>{
+    if(!要移除的) return;
+    const id = 要移除的.id;
+    forgetAccount(id);
+    // 移除的如果正好是目前登入中的，就一併登出
+    if(profile && profile.id === id){
+      try{ localStorage.removeItem(PROFILE_KEY); }catch(e){}
+      location.replace(location.pathname);
+      return;
+    }
+    renderAccounts();
+  });
+
+  document.getElementById('acc-new-btn').addEventListener('click', ()=>{
+    initSetupScreen();
+    showScreen('screen-profile-setup');
+  });
+  document.getElementById('acc-restore-btn').addEventListener('click', ()=>{
+    showScreen('screen-profile-restore');
+  });
+})();
+
+/* ---------- 登出帳號 / 切換帳號 ----------
+   登出只是離開目前的帳號 —— 這台裝置仍然記著它（rememberAccount 在每次存檔
+   時都寫進去了），回到帳號清單點一下就能回來，不需要接回碼。
+
+   真正需要接回碼的是「從這台裝置移除」：那會讓裝置忘記這個帳號，
+   之後只能靠接回碼回去。那個動作在帳號清單上長按才會出現。 */
+(function 登出與切換(){
+  document.getElementById('logout-btn').addEventListener('click', async ()=>{
     // 還沒送出去的戰績存在本機檔案裡，清掉就跟著不見了，先補送一次
     try{ await flushPendingResults(); }catch(e){ /* 送不出去也只能繼續 */ }
     try{ localStorage.removeItem(PROFILE_KEY); }catch(e){}
-    // 用 sessionStorage 傳遞「清完要停在哪一頁」—— 重載之後才讀得到
-    try{ if(清完去哪 === 'restore') sessionStorage.setItem('sgd.afterLogout', 'restore'); }catch(e){}
-    // 整頁重載，把輪詢、對局、快取的身分全部歸零
+    // 整頁重載，把上一個帳號的輪詢、對局、快取身分全部歸零
     location.replace(location.pathname);
   });
 
-  document.addEventListener('screen-left-profile-edit', 收起);
+  // 切換帳號不必先登出：直接去清單挑一個，挑了才換
+  document.getElementById('switch-btn').addEventListener('click', ()=>{
+    renderAccounts();
+    showScreen('screen-accounts');
+  });
 })();
 
 /* ---------- 註銷帳號 ----------
@@ -3603,6 +3694,36 @@ function loadLocalProfile(){
 
 function saveLocalProfile(){
   try{ localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); }catch(e){}
+  // 每次存檔都順手更新「這台裝置記得的帳號」。掛在這裡是因為建檔、接回、
+  // 改名字全都會經過這個函式，不會有哪條路徑漏掉。
+  rememberAccount(profile);
+}
+
+/* ---------- 這台裝置記得的帳號 ----------
+   登出之後不該要求重打接回碼 —— 那是「忘記這個帳號」才需要的。
+   所以把用過的帳號留在這裡，登出只是離開，點一下就回得去。 */
+const ACCOUNTS_KEY = 'sgd.accounts';
+
+function loadAccounts(){
+  try{
+    const a = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(x => x && x.id && x.nick) : [];
+  }catch(e){ return []; }
+}
+function saveAccounts(list){
+  // 留最近這些就好，不要無限長大把 localStorage 撐爆
+  try{ localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list.slice(0, 10))); }catch(e){}
+}
+function rememberAccount(p){
+  if(!p || !p.id || !p.nick) return;
+  const 其他 = loadAccounts().filter(x => x.id !== p.id);
+  // 存整份快照，切回來時不必再跟伺服器要一次就能直接開始玩
+  const 這份 = JSON.parse(JSON.stringify(p));
+  這份.savedAt = Date.now();
+  saveAccounts([這份, ...其他]);
+}
+function forgetAccount(id){
+  saveAccounts(loadAccounts().filter(x => x.id !== id));
 }
 
 async function profileApi(path, body){
@@ -4028,13 +4149,13 @@ async function recordGameResult(correct, total){
   loadLocalProfile();
   if(!profile){
     initSetupScreen();
-    // 從「切換帳號」過來的話直接停在輸入接回碼那一頁，不用自己再點一次
-    let 切換中 = false;
-    try{
-      切換中 = sessionStorage.getItem('sgd.afterLogout') === 'restore';
-      sessionStorage.removeItem('sgd.afterLogout');
-    }catch(e){}
-    showScreen(切換中 ? 'screen-profile-restore' : 'screen-profile-setup');
+    // 這台裝置記得過帳號的話，先讓他挑 —— 登出之後不該又被逼著重新建檔
+    if(loadAccounts().length){
+      renderAccounts();
+      showScreen('screen-accounts');
+    }else{
+      showScreen('screen-profile-setup');
+    }
   }else{
     renderIdentity();
     showScreen('screen-era');
@@ -4750,7 +4871,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1245';
+const APP_VERSION = '2026-10-26-1304';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
