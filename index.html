@@ -1233,10 +1233,9 @@
   <!-- 連線對戰：建立/加入房間 -->
   <section id="screen-mp-menu" class="screen">
     <p style="text-align:center; color:var(--muted); margin:0 0 14px;">建立一個房間邀朋友加入，或輸入朋友給你的 6 位房號（最多 8 人）</p>
-    <div class="actions-center" style="margin-bottom:10px;">
-      <input id="mp-name" maxlength="10" placeholder="你的名字（可留空）"
-        style="width:220px; padding:11px 14px; border-radius:999px; border:1px solid var(--muted); background:var(--card); color:var(--text); font-size:15px; text-align:center;">
-    </div>
+    <!-- 不再另外輸入名字，直接用個人檔案的暱稱。
+         但要讓玩家看得到會用哪個名字，也要知道去哪裡改。 -->
+    <p id="mp-who" style="text-align:center; color:var(--muted); font-size:13px; margin:0 0 14px;"></p>
     <div class="actions-center" style="margin-bottom:24px;">
       <button class="btn-main" id="mp-create-btn">➕ 建立房間</button>
     </div>
@@ -1919,6 +1918,8 @@ function showScreen(id){
   document.getElementById(id).classList.add('active');
   // 寫在 body 上，讓 CSS 能針對特定畫面調整版面（例如個人資料要滿版）
   document.body.dataset.screen = id;
+  // 暱稱可能剛改過，每次進連線對戰都重算一次要顯示的名字
+  if(id === 'screen-mp-menu' && typeof renderMpWho === 'function') renderMpWho();
 
   if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
   // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
@@ -2792,10 +2793,22 @@ document.getElementById('go-mp-btn').addEventListener('click', ()=>{
 });
 document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> 返回('screen-era'));
 
+// 進連線對戰時顯示「會用哪個名字」。暱稱改過之後也要跟著更新，
+// 所以每次切到這個畫面都重算一次，不是只在載入時設定一次。
+function renderMpWho(){
+  const el = document.getElementById('mp-who');
+  if(!el) return;
+  const 名字 = (profile && profile.nick) ? profile.nick : null;
+  el.textContent = 名字
+    ? '你會以「' + 名字 + '」的身分加入 · 想改名字請到個人檔案'
+    : '還沒有個人檔案，加入後會用系統給的臨時名字';
+}
+
 document.getElementById('mp-create-btn').addEventListener('click', createRoom);
 
 async function createRoom(){
-  const name = document.getElementById('mp-name').value.trim();
+  // 直接用個人檔案的暱稱。沒有檔案的話送空字串，伺服器會自己給一個臨時名字。
+  const name = (profile && profile.nick) ? profile.nick : '';
   try{
     const res = await fetch(API_BASE + '/api/create-room', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name })
@@ -2897,7 +2910,7 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
   errEl.textContent = '';
   // 仍然接受 4 位：加長之前開的房間可能還在跑，不該因為改版就進不去
   if(!/^\d{4,6}$/.test(code)){ errEl.textContent = '請輸入房號（6 位數字）'; return; }
-  const name = document.getElementById('mp-name').value.trim();
+  const name = (profile && profile.nick) ? profile.nick : '';
   try{
     const res = await fetch(API_BASE + '/api/join-room', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -4630,7 +4643,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1222';
+const APP_VERSION = '2026-10-26-1227';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
