@@ -1013,7 +1013,7 @@
       </div>
     </div>
 
-    <div class="actions-center">
+    <div class="actions-center" id="acc-bottom">
       <button class="btn-main" id="acc-new-btn">建立新檔案</button>
       <button class="btn-ghost" id="acc-restore-btn">用接回碼接回</button>
     </div>
@@ -2086,11 +2086,14 @@ function onLeaveScreen(id){
   const 執行 = document.getElementById('acc-remove-go');
   let 要移除的 = null;
 
+  const 底部 = document.getElementById('acc-bottom');
+
   function 收起移除面板(){
     面板.hidden = true;
     勾選.checked = false;
     執行.disabled = true;
     要移除的 = null;
+    底部.hidden = false;
   }
 
   /* 長按。手機沒有右鍵，而這個動作不該做成常駐按鈕（太容易誤觸），
@@ -2143,6 +2146,9 @@ function onLeaveScreen(id){
         勾選.checked = false;
         執行.disabled = true;
         面板.hidden = false;
+        // 面板是在問一個明確的決定，底下那兩個不相干的出口先收起來，
+        // 不然畫面上會同時有四個可按的東西，焦點就散了
+        底部.hidden = true;
         面板.scrollIntoView({ block:'center' });
       });
 
@@ -4877,7 +4883,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1314';
+const APP_VERSION = '2026-10-26-1410';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
