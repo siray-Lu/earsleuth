@@ -647,21 +647,20 @@
      這樣手機跟桌機看到的相對位置完全一樣。 */
   .profile-stage{
     position:relative;
-    /* 寬度取三者最小：
-         100vw      —— 破框撐滿螢幕寬（不受 body 內距與 .app 最大寬度限制）
-         640px      —— 桌機封頂，不封的話 1920 寬會算出 3440 高的面板
-         由高度回推 —— 面板高是寬的 1.79 倍，手機上先撞到的是高度不是寬度。
-                       不先扣掉高度的話整頁一定要滑動。
+    /* 填滿整個畫面：寬度撐滿、高度也撐滿，插畫用 cover 自己裁切。
+       不再鎖長寬比 —— 四塊內容都在四個角，中間沒有東西壓在插畫的特定位置上，
+       所以裁切多少都不影響它們。
+       （先前必須鎖比例，是因為那時身分卡要精準蓋住插畫中間那塊螢幕。）
 
-       為什麼不是用 max-height 壓：寬度仍然是 100vw 的話比例就被破壞，
-       背景 cover 會重新裁切，四塊內容就對不上插畫上的位置了。
-       用 dvh 而不是 vh：手機瀏覽器的網址列會收合，vh 算的是收合前的高度。 */
-    width:min(100vw, 640px, calc((100vh - 36px) * 0.5586));
-    width:min(100vw, 640px, calc((100dvh - 36px) * 0.5586));
+       桌機封頂在 640：不封的話整片拉開，插畫會被裁成中間一條橫切片。
+       用 dvh 不是 vh —— 手機瀏覽器的網址列會收合，vh 算的是收合前的高度，
+       照 vh 算會多出一截而讓頁面可以滑動。 */
+    width:100vw;
+    max-width:640px;
+    height:100vh;
+    height:100dvh;
     margin-left:50%;
     transform:translateX(-50%);
-    aspect-ratio:572 / 1024;
-    border-radius:20px;
     overflow:hidden;
     margin-bottom:0;
     border:1px solid rgba(255,255,255,.14);
@@ -670,7 +669,7 @@
   }
   /* 真的貼齊螢幕邊緣時，圓角跟邊框只會看起來像沒切乾淨 */
   @media (max-width: 688px){
-    .profile-stage{ border-radius:0; border-left:none; border-right:none; }
+    .profile-stage{ border-radius:0; border:none; }
   }
 
   /* 這一頁的標題與身分膠囊收起來：名字就寫在插畫中間那塊，重複了，
@@ -678,7 +677,8 @@
   body[data-screen="screen-profile"] h1,
   body[data-screen="screen-profile"] .hero-deco,
   body[data-screen="screen-profile"] .identity-bar{ display:none !important; }
-  body[data-screen="screen-profile"]{ padding-top:8px; }
+  /* 這一頁的面板要貼齊四邊，body 的內距會在上下左右留白 */
+  body[data-screen="screen-profile"]{ padding:0; }
   .ps{
     position:absolute;
     /* 擋住的地方就確實擋住，不用模糊去混 */
@@ -4624,7 +4624,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-0935';
+const APP_VERSION = '2026-10-26-0951';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
