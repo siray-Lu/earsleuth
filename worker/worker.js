@@ -341,6 +341,65 @@ export default {
         return json(await res.json(), res.status);
       }
 
+      /* 註銷帳號。要跨三個 Durable Object，所以不能走下面那條「原封不動轉給
+         玩家自己的 DO」的通道，得在這裡自己串。 */
+      if (path === "/api/profile/delete" && request.method === "POST") {
+        const pid = body.playerId;
+        if (!pid || !body.token) return json({ ok: false, error: "missing playerId" }, 400);
+        const pStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + pid));
+
+        // ① 先驗身分，順便拿接回碼
+        const preRes = await pStub.fetch("https://do/internal/pre-delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: body.token }),
+        });
+        const pre = await preRes.json().catch(() => ({ ok: false }));
+        if (!pre.ok) return json(pre, preRes.status);
+
+        // ② 刪檔案。先刪這個 —— 檔案一不在，任何端點都回 404，
+        //    就算下面兩步失敗，也不會留下半個還能用的帳號。
+        const delRes = await pStub.fetch("https://do/api/profile/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: body.token }),
+        });
+        const del = await delRes.json().catch(() => ({ ok: false }));
+        if (!del.ok) return json(del, delRes.status);
+
+        // ③ 釋放接回碼，讓那串碼可以重新發給別人
+        if (pre.recoveryCode) {
+          try {
+            const idx = env.PLAYERS.get(env.PLAYERS.idFromName("rc:" + pre.recoveryCode));
+            await idx.fetch("https://do/idx/release", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ playerId: pid }),
+            });
+          } catch (e) { console.error("release rc failed:", String(e && e.message || e)); }
+        }
+
+        // ④ 從所有排行榜上撤下來。不清的話，帳號沒了但暱稱和成績還掛在榜上。
+        const 榜 = [];
+        for (const era of ERAS) for (const n of TIMED_COUNTS) 榜.push(era + "_" + n);
+        榜.push("live_total", "live_streak");
+        let 清掉幾張 = 0;
+        for (const name of 榜) {
+          try {
+            const stub = env.BOARDS.get(env.BOARDS.idFromName("lb:" + name));
+            const r = await stub.fetch("https://do/forget", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ playerId: pid }),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (d && d.removed) 清掉幾張++;
+          } catch (e) { console.error("forget " + name + " failed:", String(e && e.message || e)); }
+        }
+
+        return json({ ok: true, deleted: true, boardsCleared: 清掉幾張 });
+      }
+
       // 接回：拿接回碼去索引 DO 換回 playerId，再照一般流程往那個人的 DO 打
       let playerId = body.playerId || url.searchParams.get("playerId") || null;
       if (path === "/api/profile/restore" && request.method === "POST") {
@@ -994,6 +1053,17 @@ export class PlayerDO {
       return owner ? json({ ok: true, playerId: owner }) : json({ ok: false, error: "not found" }, 404);
     }
 
+    // 註銷帳號時把這組接回碼釋放掉，之後可以重新發給別人。
+    // 只認得出是哪個玩家的才放行 —— 不然知道別人的碼就能把它作廢。
+    if (path === "/idx/release") {
+      const owner = await this.state.storage.get("owner");
+      if (owner && body.playerId && owner !== body.playerId) {
+        return json({ ok: false, error: "not owner" }, 403);
+      }
+      await this.state.storage.deleteAll();
+      return json({ ok: true });
+    }
+
     /* ---- 玩家檔案 ---- */
     if (path === "/api/profile/create") {
       const profile = {
@@ -1117,6 +1187,20 @@ export class PlayerDO {
     if (path === "/api/profile/verify") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
       return json({ ok: true, profile: publicProfile(profile) });
+    }
+
+    // 註銷前先驗身分、並把接回碼交出去（上層要用它去清索引）。這裡還不刪。
+    if (path === "/internal/pre-delete") {
+      if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
+      return json({ ok: true, recoveryCode: profile.recoveryCode || null });
+    }
+
+    // 真的刪。deleteAll 之後這個 Durable Object 就是空的，
+    // 上面那行 if (!profile) 會讓所有端點一律回 404 no profile —— 接回碼也救不回來。
+    if (path === "/api/profile/delete") {
+      if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
+      await this.state.storage.deleteAll();
+      return json({ ok: true, deleted: true });
     }
 
     // 計時挑戰開始。伺服器自己記下起跑時間 —— 秒數絕對不能讓前端自己報，

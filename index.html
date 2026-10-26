@@ -181,6 +181,30 @@
   .neon-cyan{ --line:#22e3ff; --glow:34,227,255; }
   .neon-pink{ --line:#ff4ded; --glow:255,77,237; }
 
+  /* 註銷帳號。刻意做得低調 —— 平常不該吸引人去按，但要找得到。 */
+  .danger-zone{ text-align:center; margin:22px 0 0; }
+  .danger-link{
+    background:none; border:none; font-family:inherit; cursor:pointer;
+    color:var(--muted); font-size:13px; padding:6px 10px;
+    border-bottom:1px dashed rgba(171,144,214,.4);
+  }
+  .danger-link:hover{ color:var(--red); border-bottom-color:var(--red); }
+  .danger-panel{
+    margin-top:12px; text-align:left;
+    background:rgba(60,10,26,.5);
+    border:1px solid var(--red);
+    border-radius:14px; padding:16px;
+  }
+  .danger-panel[hidden]{ display:none; }
+  .danger-panel h4{ margin:0 0 8px; font-size:15px; color:var(--red); }
+  .danger-panel ul{ margin:0 0 12px; padding-left:20px; color:var(--muted); font-size:13px; line-height:1.8; }
+  .danger-panel .btn-danger{
+    background:var(--red); border:none; color:#2a0410; font-weight:700;
+    padding:11px 22px; border-radius:999px; font-size:15px;
+    font-family:inherit; cursor:pointer;
+  }
+  .danger-panel .btn-danger:disabled{ opacity:.4; cursor:not-allowed; }
+
   .install-wrap{ text-align:center; margin:14px 0 0; }
   .install-wrap[hidden]{ display:none; }
   .install-link{
@@ -1013,6 +1037,29 @@
     <div class="actions-center">
       <button class="btn-main" id="edit-save-btn">儲存</button>
       <button class="btn-ghost" id="edit-cancel-btn">取消</button>
+    </div>
+
+    <div class="danger-zone">
+      <button class="danger-link" id="del-open-btn">註銷帳號</button>
+
+      <div class="danger-panel" id="del-panel" hidden>
+        <h4>⚠️ 這個動作無法復原</h4>
+        <ul>
+          <li>這個檔案會從伺服器上永久刪除</li>
+          <li>你的接回碼立刻失效，之後無法用它接回任何東西</li>
+          <li>所有排行榜上的名次與成績會被撤下</li>
+          <li>玩過的場次、答對題數、競速總分與最高連對全部歸零</li>
+        </ul>
+        <p class="field-label" style="text-align:left; margin:0 0 8px;">
+          確定的話，請在下面打出你的名字：<b id="del-nick-hint">-</b>
+        </p>
+        <input id="del-confirm" class="text-input" autocomplete="off" placeholder="輸入你的名字">
+        <p id="del-error" style="color:var(--red); font-size:13px; min-height:18px; margin:8px 0 0;"></p>
+        <div class="actions-center" style="margin-top:4px;">
+          <button class="btn-danger" id="del-go-btn" disabled>永久刪除</button>
+          <button class="btn-ghost" id="del-cancel-btn">取消</button>
+        </div>
+      </div>
     </div>
   </section>
   <!-- 年代篩選畫面 -->
@@ -1929,6 +1976,8 @@ window.addEventListener('popstate', e=>{
 // 然後在完全不相干的畫面上突然放出音樂 —— 而那一題也就白白浪費掉了。
 // 實測路徑：遊戲中點右上角頭像去看個人檔案，四秒後音樂就在那裡播起來。
 function onLeaveScreen(id){
+  // 註銷面板展開著就切走的話，下次進來會直接看到那片紅色警告
+  if(id === 'screen-profile-edit') document.dispatchEvent(new Event('screen-left-profile-edit'));
   // 接回碼開著的時候切走，回來會看到一個莫名其妙蓋在別的畫面上的彈窗
   if(id === 'screen-profile'){ const m = document.getElementById('rc-modal'); if(m) m.hidden = true; }
   if(id === 'screen-game'){
@@ -1946,6 +1995,80 @@ function onLeaveScreen(id){
     stopLivePoll();
   }
 }
+
+/* ---------- 註銷帳號 ----------
+   不可逆，所以做成三道關卡：收起來 → 展開看清楚後果 → 打出名字才解鎖。
+   只按兩下就刪掉太容易誤觸，而且刪掉連接回碼都救不回來。 */
+(function 註銷帳號(){
+  const 開 = document.getElementById('del-open-btn');
+  const 面板 = document.getElementById('del-panel');
+  const 輸入 = document.getElementById('del-confirm');
+  const 執行 = document.getElementById('del-go-btn');
+  const 取消 = document.getElementById('del-cancel-btn');
+  const 錯誤 = document.getElementById('del-error');
+
+  function 收起(){
+    面板.hidden = true;
+    開.hidden = false;
+    輸入.value = '';
+    錯誤.textContent = '';
+    執行.disabled = true;
+    執行.textContent = '永久刪除';
+  }
+
+  開.addEventListener('click', ()=>{
+    if(!profile) return;
+    面板.hidden = false;
+    開.hidden = true;
+    document.getElementById('del-nick-hint').textContent = profile.nick;
+    錯誤.textContent = '';
+    輸入.value = '';
+    執行.disabled = true;
+    輸入.focus();
+  });
+
+  取消.addEventListener('click', 收起);
+
+  // 打對名字才解鎖。用 trim 比對，前後多打空白不算錯。
+  輸入.addEventListener('input', ()=>{
+    執行.disabled = !profile || 輸入.value.trim() !== profile.nick;
+  });
+
+  執行.addEventListener('click', async ()=>{
+    if(!profile || !profile.token){
+      錯誤.textContent = '這個檔案還沒同步到伺服器，無法註銷。';
+      return;
+    }
+    執行.disabled = true;
+    執行.textContent = '刪除中…';
+    錯誤.textContent = '';
+    try{
+      const res = await fetch(PROFILE_API + '/api/profile/delete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ playerId: profile.id, token: profile.token })
+      });
+      const d = await res.json().catch(()=>({ ok:false }));
+      if(!d.ok){
+        錯誤.textContent = '刪除失敗：' + (d.error || '請稍後再試');
+        執行.disabled = false;
+        執行.textContent = '永久刪除';
+        return;
+      }
+      // 伺服器那邊刪乾淨了，本機這份也要清掉，不然重新整理又會出現一個
+      // 指向已不存在檔案的幽靈身分。
+      try{ localStorage.removeItem(PROFILE_KEY); }catch(e){}
+      // 整頁重載，確保所有畫面狀態、輪詢、快取的身分全部歸零
+      location.replace(location.pathname);
+    }catch(err){
+      錯誤.textContent = '連不上伺服器，請檢查網路後再試一次。';
+      執行.disabled = false;
+      執行.textContent = '永久刪除';
+    }
+  });
+
+  // 離開編輯畫面時收回去，下次進來不會看到展開中的危險面板
+  document.addEventListener('screen-left-profile-edit', 收起);
+})();
 
 /* ---------- 接回碼的彈窗 ---------- */
 const rcModal = document.getElementById('rc-modal');
@@ -4501,7 +4624,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-0923';
+const APP_VERSION = '2026-10-26-0935';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
