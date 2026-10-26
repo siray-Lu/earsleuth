@@ -750,11 +750,11 @@
     padding:2.4cqw 2.8cqw;
   }
   .ps-ident .avatar{ width:11.5cqw; height:11.5cqw; font-size:5.8cqw; border-width:0.5cqw; }
-  /* 頭像與名字自己就是按鈕。沒有任何提示的話沒人會知道可以按，
+  /* 整塊身分區都是按鈕。沒有任何提示的話沒人會知道可以按，
      所以滑過去要有反應，鍵盤 focus 也要看得出來。 */
-  .tappable{ cursor:pointer; transition:filter .15s ease, opacity .15s ease; }
-  .tappable:hover{ filter:brightness(1.25); }
-  .tappable:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+  .ps-ident{ cursor:pointer; transition:filter .15s ease, border-color .15s ease; }
+  .ps-ident:hover{ filter:brightness(1.18); border-color:var(--accent); }
+  .ps-ident:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   /* 這兩行都不換行：框是扁的，一換行就會把下面那行擠出框外 */
   .ps-nick{
     font-weight:700; font-size:3.8cqw; line-height:1.2;
@@ -1051,10 +1051,12 @@
         <span class="k">🔑</span><span class="t">接回碼</span>
       </button>
 
-      <div class="ps ps-5 ps-ident">
-        <span class="avatar tappable" id="profile-avatar" role="button" tabindex="0" title="換頭像"></span>
+      <!-- 整塊都是按鈕。按在頭像或名字上會直接跳到對應的欄位，
+           按在其他地方（例如「入行於」那行、四周留白）也照樣進得去編輯畫面。 -->
+      <div class="ps ps-5 ps-ident" id="profile-ident" role="button" tabindex="0" title="改名字 / 換頭像">
+        <span class="avatar" id="profile-avatar"></span>
         <div>
-          <div class="ps-nick tappable" id="profile-nick" role="button" tabindex="0" title="改名字">-</div>
+          <div class="ps-nick" id="profile-nick">-</div>
           <div class="ps-since" id="profile-since">-</div>
         </div>
       </div>
@@ -3746,11 +3748,12 @@ function paintAvatar(el, avatar){
 
 function renderIdentity(){
   const bar = document.getElementById('identity-bar');
-  // 遊戲進行中藏起來。點下去會離開當前這一題，而那一題就浪費了 ——
-  // 與其事後補救，不如一開始就別讓人誤觸。
+  /* 只在主頁面出現。其他畫面各自有返回的路，不需要這個入口；
+     在遊戲中點下去還會把當前那一題浪費掉，在個人資料頁則是整個重複。
+     與其一個一個列出要藏的畫面，不如反過來只列出要顯示的那一個。 */
   const 現在 = document.querySelector('.screen.active');
-  const 遊戲中 = 現在 && (現在.id === 'screen-game' || 現在.id === 'screen-live');
-  if(!profile || 遊戲中){ bar.style.display = 'none'; return; }
+  const 在主頁面 = 現在 && 現在.id === 'screen-era';
+  if(!profile || !在主頁面){ bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
   paintAvatar(document.getElementById('identity-avatar'), profile.avatar);
   document.getElementById('identity-nick').textContent = profile.nick;
@@ -3945,18 +3948,21 @@ function openProfileEdit(聚焦){
 }
 
 
-// 頭像與名字各自是一個入口，按下去直接到對應的地方
+/* 整塊身分區都是進入編輯畫面的入口。
+   按在頭像或名字上還是會跳到對應的欄位，按在其他地方（「入行於」那行、
+   四周的留白）就單純打開編輯畫面 —— 原本那些地方按了沒反應，像壞掉。 */
 (function 綁可按的身分(){
-  const 綁 = (id, 聚焦) => {
-    const el = document.getElementById(id);
-    el.addEventListener('click', ()=> openProfileEdit(聚焦));
-    // role=button 的元素要自己處理鍵盤，瀏覽器不會幫忙
-    el.addEventListener('keydown', e=>{
-      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openProfileEdit(聚焦); }
-    });
+  const 區塊 = document.getElementById('profile-ident');
+  const 從哪進來 = (target) => {
+    if(target.closest && target.closest('#profile-avatar')) return 'avatar';
+    if(target.closest && target.closest('#profile-nick')) return 'nick';
+    return null;
   };
-  綁('profile-avatar', 'avatar');
-  綁('profile-nick', 'nick');
+  區塊.addEventListener('click', e=> openProfileEdit(從哪進來(e.target)));
+  // role=button 的元素要自己處理鍵盤，瀏覽器不會幫忙
+  區塊.addEventListener('keydown', e=>{
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openProfileEdit(null); }
+  });
 })();
 
 document.getElementById('edit-nick').addEventListener('input', refreshEditPreview);
@@ -4871,7 +4877,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1304';
+const APP_VERSION = '2026-10-26-1314';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
