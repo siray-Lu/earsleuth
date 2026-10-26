@@ -696,8 +696,14 @@
   .ps-4{ left:20.2%; right:23.4%; top:14%;   }   /* 中央：插畫裡那塊大螢幕 */
   /* 左右兩塊的上緣對齊。標出來的框差了 2.4%，兩邊都有標題之後，
      那 2.4% 會變成「兩張卡片沒對齊」，看起來像沒做好而不是刻意的。 */
-  .ps-2{ left:0;     right:56.4%; top:65.6%; }   /* 左下 */
-  .ps-3{ left:51.8%; right:6.9%;  top:65.6%; }   /* 右下 */
+  /* 下面兩塊左右對稱：外側各留 4%，中間留 4% 的縫。
+     原本左邊貼齊邊緣（0%）、右邊卻留 6.9%，寬度也差了 2.3%，看起來是歪的。
+
+     用 bottom 而不是 top 定位：這兩塊的高度是跟著容器寬度算的（cqw），
+     螢幕比例一變高度就會變，用 top 的話矮螢幕上會掉出畫面外；
+     改成「距離底部固定」就不管內容多高都貼著底。 */
+  .ps-2{ left:4%;  right:52%; bottom:4%; }   /* 左下 */
+  .ps-3{ left:52%; right:4%;  bottom:4%; }   /* 右下 */
   /* 中央這格要高到蓋住整塊螢幕，不然底下會露出「RHYTHM」。
      這是位置本身的需求，跟裡面放什麼無關。 */
   .ps-4{ aspect-ratio:1.9 / 1; }
@@ -4624,7 +4630,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-0951';
+const APP_VERSION = '2026-10-26-1222';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
