@@ -121,13 +121,17 @@ function cleanNick(raw) {
   return cleanText(raw, 10) || "無名氏";
 }
 
-function cleanAvatar(raw) {
+/* prev 是這個帳號目前存著的頭像。撤掉的值只有「本來就是這個值」才留得住 ——
+   不帶 prev（例如新建帳號）就等於沒有這個資格，會被換成第一個選項。
+   少了這個條件，撤掉就只是把按鈕藏起來，直接打 API 照樣拿得到。 */
+function cleanAvatar(raw, prev) {
   const a = raw && typeof raw === "object" ? raw : {};
-  const knownEmoji = AVATAR_EMOJIS.includes(a.emoji) || LEGACY_EMOJIS.includes(a.emoji);
-  const knownColor = AVATAR_COLORS.includes(a.color) || LEGACY_COLORS.includes(a.color);
+  const p = prev && typeof prev === "object" ? prev : {};
+  const keepEmoji = LEGACY_EMOJIS.includes(a.emoji) && a.emoji === p.emoji;
+  const keepColor = LEGACY_COLORS.includes(a.color) && a.color === p.color;
   return {
-    emoji: knownEmoji ? a.emoji : AVATAR_EMOJIS[0],
-    color: knownColor ? a.color : AVATAR_COLORS[0],
+    emoji: AVATAR_EMOJIS.includes(a.emoji) || keepEmoji ? a.emoji : AVATAR_EMOJIS[0],
+    color: AVATAR_COLORS.includes(a.color) || keepColor ? a.color : AVATAR_COLORS[0],
   };
 }
 
@@ -1110,7 +1114,9 @@ export class PlayerDO {
       const imported = {
         id: inc.id,
         nick: cleanNick(inc.nick),
-        avatar: cleanAvatar(inc.avatar),
+        // 搬裝置是同一個帳號換機器，不是新帳號 —— 它原本挑到的頭像照樣算數，
+        // 所以拿它自己的值當作「原本就是這個」的依據。
+        avatar: cleanAvatar(inc.avatar, inc.avatar),
         recoveryCode: inc.recoveryCode,
         // token 沿用舊的，這樣舊裝置上已經存著的那組 token 搬完還能繼續用
         token: inc.token || randomId(32),
@@ -1278,7 +1284,7 @@ export class PlayerDO {
     if (path === "/api/profile/update") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
       if (body.nick != null) profile.nick = cleanNick(body.nick);
-      if (body.avatar != null) profile.avatar = cleanAvatar(body.avatar);
+      if (body.avatar != null) profile.avatar = cleanAvatar(body.avatar, profile.avatar);
       await this.state.storage.put("profile", profile);
       return json({ ok: true, profile: publicProfile(profile) });
     }
