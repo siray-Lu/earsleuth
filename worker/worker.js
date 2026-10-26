@@ -58,12 +58,19 @@ function cleanRoomName(raw, fallback) {
 const AVATAR_EMOJIS = [
   "🎤","🎧","🎸","🥁","🎹","🎷","🎺","🎻",
   "🕵️","🔍","🦉","🦊","🐼","🐧","🐸","🐱",
-  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸","🤖",
+  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸",
 ];
 const AVATAR_COLORS = [
   "#ff5fa2","#5fd0ff","#ffcf5c","#4ade80",
-  "#f87171","#a78bfa","#fb923c","#2dd4bf",
+  "#f87171","#a78bfa","#fb923c",
 ];
+
+/* 曾經開放過、現在從選單撤掉的值。只能停止提供，不能從驗證裡刪掉 ——
+   cleanAvatar 認不得的值會被換成第一個選項，所以刪掉的那一刻，
+   早就挑了這些的帳號下次存檔（改個名字就算）頭像會無聲無息變成 🎤 加粉紅。
+   新的人挑不到，已經在用的人留著。 */
+const LEGACY_EMOJIS = ["🤖"];
+const LEGACY_COLORS = ["#2dd4bf"];
 
 // 接回碼刻意拿掉 0/O/1/I/L 這些看起來很像的字，不然使用者會抄錯然後怪遊戲壞掉
 const RC_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -116,9 +123,11 @@ function cleanNick(raw) {
 
 function cleanAvatar(raw) {
   const a = raw && typeof raw === "object" ? raw : {};
+  const knownEmoji = AVATAR_EMOJIS.includes(a.emoji) || LEGACY_EMOJIS.includes(a.emoji);
+  const knownColor = AVATAR_COLORS.includes(a.color) || LEGACY_COLORS.includes(a.color);
   return {
-    emoji: AVATAR_EMOJIS.includes(a.emoji) ? a.emoji : AVATAR_EMOJIS[0],
-    color: AVATAR_COLORS.includes(a.color) ? a.color : AVATAR_COLORS[0],
+    emoji: knownEmoji ? a.emoji : AVATAR_EMOJIS[0],
+    color: knownColor ? a.color : AVATAR_COLORS[0],
   };
 }
 

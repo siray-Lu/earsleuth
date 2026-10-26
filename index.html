@@ -3666,21 +3666,23 @@ if('serviceWorker' in navigator && location.protocol !== 'file:'){
    這一段補上身分：暱稱、頭像、跨裝置接回碼，之後的排行榜與即時競速都靠它。
 ======================================================= */
 
-// 這兩張表必須跟 worker/worker.js 裡的 AVATAR_EMOJIS / AVATAR_COLORS 一模一樣。
-// 對不起來的話，伺服器會把它不認得的值默默換成第一個選項，
-// 使用者會看到「我明明選了吉他，存完卻變成麥克風」。
+/* 這兩張是「現在可以挑的」，要跟 worker.js 的 AVATAR_EMOJIS / AVATAR_COLORS 一模一樣。
+   對不起來的話，伺服器會把它不認得的值默默換成第一個選項，
+   使用者會看到「我明明選了吉他，存完卻變成麥克風」。
+   （原本兩邊有五個顏色對不上，玩家選了青、藍、金、綠、紅，存下去全變粉紅，
+     而且畫面不會說發生了什麼事。）
+
+   worker.js 另外還有一組 LEGACY_EMOJIS / LEGACY_COLORS，是曾經開放、現在撤掉的值。
+   那組刻意只存在於伺服器端：挑不到，但已經在用的人留得住。 */
 const AVATAR_EMOJIS = [
   "🎤","🎧","🎸","🥁","🎹","🎷","🎺","🎻",
   "🕵️","🔍","🦉","🦊","🐼","🐧","🐸","🐱",
-  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸","🤖",
+  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸",
 ];
-/* 這張表必須跟 worker.js 的 AVATAR_COLORS 一字不差 ——
-   伺服器只接受表內的顏色，對不上就一律換成第一個。
-   原本兩邊有五個顏色對不上，玩家選了青色、藍色、金色、綠色、紅色，
-   存下去全部變成粉紅，而且畫面不會說發生了什麼事。 */
+// 七個顏色剛好在手機上排成一行。第八個會擠下去自己佔一行，很突兀。
 const AVATAR_COLORS = [
   "#ff5fa2","#5fd0ff","#ffcf5c","#4ade80",
-  "#f87171","#a78bfa","#fb923c","#2dd4bf",
+  "#f87171","#a78bfa","#fb923c",
 ];
 
 // 個人檔案一律打雲端，不跟著 API_BASE 走本機。
@@ -3781,6 +3783,8 @@ function buildAvatarPicker(gridEl, rowEl, draft, onChange){
     b.addEventListener('click', ()=>{ draft.color = c; refresh(); onChange(); });
     rowEl.appendChild(b);
   });
+  /* 用 index 對位。已經撤掉的頭像（例如 🤖）不在表裡，所以會「一格都沒亮」——
+     這剛好是對的：不去碰它就保持原樣，只有真的點了別的才會換掉。 */
   function refresh(){
     Array.from(gridEl.children).forEach((b,i)=> b.classList.toggle('sel', AVATAR_EMOJIS[i] === draft.emoji));
     Array.from(rowEl.children).forEach((b,i)=> b.classList.toggle('sel', AVATAR_COLORS[i] === draft.color));
@@ -4883,7 +4887,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1419';
+const APP_VERSION = '2026-10-26-1500';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
