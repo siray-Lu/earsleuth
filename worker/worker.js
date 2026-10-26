@@ -58,7 +58,7 @@ function cleanRoomName(raw, fallback) {
 const AVATAR_EMOJIS = [
   "🎤","🎧","🎸","🥁","🎹","🎷","🎺","🎻",
   "🕵️","🔍","🦉","🦊","🐼","🐧","🐸","🐱",
-  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸",
+  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸","🤖",
 ];
 const AVATAR_COLORS = [
   "#ff5fa2","#5fd0ff","#ffcf5c","#4ade80",

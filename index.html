@@ -3672,7 +3672,7 @@ if('serviceWorker' in navigator && location.protocol !== 'file:'){
 const AVATAR_EMOJIS = [
   "🎤","🎧","🎸","🥁","🎹","🎷","🎺","🎻",
   "🕵️","🔍","🦉","🦊","🐼","🐧","🐸","🐱",
-  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸",
+  "👑","⭐","🔥","💎","🌙","🍜","🎯","🛸","🤖",
 ];
 /* 這張表必須跟 worker.js 的 AVATAR_COLORS 一字不差 ——
    伺服器只接受表內的顏色，對不上就一律換成第一個。
@@ -4883,7 +4883,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1410';
+const APP_VERSION = '2026-10-26-1419';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
