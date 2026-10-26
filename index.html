@@ -181,8 +181,15 @@
   .neon-cyan{ --line:#22e3ff; --glow:34,227,255; }
   .neon-pink{ --line:#ff4ded; --glow:255,77,237; }
 
-  .install-wrap{ text-align:center; margin:0 0 12px; }
+  .install-wrap{ text-align:center; margin:14px 0 0; }
   .install-wrap[hidden]{ display:none; }
+  .install-link{
+    background:none; border:none; font-family:inherit; cursor:pointer;
+    color:var(--muted); font-size:13px; padding:4px 8px;
+    border-bottom:1px dashed rgba(171,144,214,.5);
+  }
+  .install-link:hover{ color:var(--text); border-bottom-color:var(--text); }
+  .install-note{ color:var(--muted); font-size:12px; line-height:1.5; }
 
   /* 底下三個入口 */
   .home-nav{
@@ -1057,11 +1064,6 @@
       </div>
     </div>
 
-    <!-- 只有在瀏覽器說「可以安裝」而且目前不是以 App 開啟時才會出現 -->
-    <div class="install-wrap" id="install-wrap" hidden>
-      <button class="btn-ghost" id="install-btn">📲 安裝成應用程式</button>
-    </div>
-
     <div class="home-nav">
       <button class="neon-pink" id="go-live-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>
@@ -1090,6 +1092,12 @@
         </svg>
         <span>連線對戰</span>
       </button>
+    </div>
+
+    <!-- 擺在最下面、做成一行小字：只對還沒安裝的人出現，裝完就永遠消失，
+         不需要跟上面三個主要入口搶注意力 -->
+    <div class="install-wrap" id="install-wrap" hidden>
+      <button class="install-link" id="install-btn">📲 安裝到手機</button>
     </div>
   </section>
 
@@ -1982,10 +1990,18 @@ document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && !rcModal.hidd
     try{
       e.prompt();
       const 結果 = await e.userChoice;
-      if(結果 && 結果.outcome !== 'accepted'){
+      wrap.hidden = false;
+      if(結果 && 結果.outcome === 'accepted'){
+        /* 這一行是實際踩過坑才加的：Chrome 安裝 PWA 不是本機直接建立圖示，
+           而是先把網站資料送去 Google 的伺服器產生安裝檔再裝回手機，
+           中間有幾秒到幾十秒的空窗。不說的話，使用者按完就去主畫面找，
+           找不到就以為失敗了。 */
+        wrap.innerHTML = '<span class="install-note">✓ 安裝中…<br>' +
+          '圖示會在幾秒後出現在「應用程式清單」（主畫面往上滑），<br>' +
+          '長按它就能加到主畫面</span>';
+      } else {
         // 取消了就要說。這個事件用過就作廢，要再試一次只能重新整理。
-        wrap.hidden = false;
-        wrap.innerHTML = '<span style="color:var(--muted); font-size:13px;">沒有完成安裝 · 重新整理頁面可以再試一次</span>';
+        wrap.innerHTML = '<span class="install-note">沒有完成安裝 · 重新整理頁面可以再試一次</span>';
       }
     }catch(err){
       console.warn('install prompt failed', err);
@@ -4485,7 +4501,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-0834';
+const APP_VERSION = '2026-10-26-0923';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
