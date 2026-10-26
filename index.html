@@ -1981,8 +1981,17 @@ document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && !rcModal.hidd
     wrap.hidden = true;
     try{
       e.prompt();
-      await e.userChoice;
-    }catch(err){ console.warn('install prompt failed', err); }
+      const 結果 = await e.userChoice;
+      if(結果 && 結果.outcome !== 'accepted'){
+        // 取消了就要說。這個事件用過就作廢，要再試一次只能重新整理。
+        wrap.hidden = false;
+        wrap.innerHTML = '<span style="color:var(--muted); font-size:13px;">沒有完成安裝 · 重新整理頁面可以再試一次</span>';
+      }
+    }catch(err){
+      console.warn('install prompt failed', err);
+      wrap.hidden = false;
+      wrap.innerHTML = '<span style="color:var(--muted); font-size:13px;">安裝沒有啟動 · 重新整理頁面可以再試一次</span>';
+    }
   });
 
   // 裝好之後按鈕就該消失
@@ -4476,7 +4485,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-0821';
+const APP_VERSION = '2026-10-26-0834';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
