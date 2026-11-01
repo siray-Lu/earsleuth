@@ -228,6 +228,30 @@ function cleanAvatar(raw, prev) {
   };
 }
 
+/* 帳號沒了，就要從每個好友的清單上拿掉，不然對方會留著一張點進去
+   顯示「查不到這個人的資料」的卡片，而且永遠不會自己消失。
+
+   有上限：Cloudflare 一個請求最多 50 個子請求，而註銷本身已經用掉 18 個。
+   抓 25 留餘裕 —— 好友超過 25 個的人會剩下幾張幽靈卡片，按一下「刪除」就沒了，
+   比整個註銷請求爆掉好。 */
+const PURGE_FRIEND_LIMIT = 25;
+
+async function 從好友清單上移除(env, playerId, friendIds) {
+  const 要處理 = (friendIds || []).slice(0, PURGE_FRIEND_LIMIT);
+  let 處理了 = 0;
+  for (const fid of 要處理) {
+    try {
+      await env.PLAYERS.get(env.PLAYERS.idFromName("player:" + fid)).fetch("https://do/internal/friend-remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ friendId: playerId }),
+      });
+      處理了++;
+    } catch (e) { /* 單一個失敗不該讓整個註銷失敗 */ }
+  }
+  return 處理了;
+}
+
 // 給別人看的版本：token 是寫入權限，接回碼等於帳號救回權，兩個都不能外流。
 // 排行榜、房間名單都會用到這個函式，漏一個地方就等於把別人的檔案送出去。
 function publicProfile(p) {
@@ -490,7 +514,10 @@ export default {
         // ③ 名字放回去，不然帳號沒了那個名字卻永遠佔著沒人用得到
         if (pre.nick) await releaseNick(env, pre.nick, pid);
 
-        // ④ 釋放接回碼，讓那串碼可以重新發給別人
+        // ④ 從每個好友的清單上拿掉，不然對方會留著一張查不到資料的幽靈卡片
+        const 清掉好友 = await 從好友清單上移除(env, pid, pre.friendIds);
+
+        // ⑤ 釋放接回碼，讓那串碼可以重新發給別人
         if (pre.recoveryCode) {
           try {
             const idx = env.PLAYERS.get(env.PLAYERS.idFromName("rc:" + pre.recoveryCode));
@@ -502,7 +529,7 @@ export default {
           } catch (e) { console.error("release rc failed:", String(e && e.message || e)); }
         }
 
-        // ⑤ 從所有排行榜上撤下來。不清的話，帳號沒了但暱稱和成績還掛在榜上。
+        // ⑥ 從所有排行榜上撤下來。不清的話，帳號沒了但暱稱和成績還掛在榜上。
         const 榜 = [];
         for (const era of ERAS) for (const n of TIMED_COUNTS) 榜.push(era + "_" + n);
         榜.push("live_total", "live_streak");
@@ -520,7 +547,7 @@ export default {
           } catch (e) { console.error("forget " + name + " failed:", String(e && e.message || e)); }
         }
 
-        return json({ ok: true, deleted: true, boardsCleared: 清掉幾張 });
+        return json({ ok: true, deleted: true, boardsCleared: 清掉幾張, friendsCleared: 清掉好友 });
       }
 
       // 接回：拿接回碼去索引 DO 換回 playerId，再照一般流程往那個人的 DO 打
@@ -599,6 +626,7 @@ export default {
       const info = await infoRes.json().catch(() => ({ ok: false }));
       if (!info.ok) return json(info, infoRes.status);
 
+      const 清掉好友 = await 從好友清單上移除(env, pid, info.friendIds);
       if (info.nick) await releaseNick(env, info.nick, pid);
       if (info.recoveryCode) {
         try {
@@ -626,7 +654,7 @@ export default {
           if (d && d.removed) 清掉幾張++;
         } catch (e) { /* 單張清不掉不該讓整個清除失敗 */ }
       }
-      return json({ ok: true, purged: pid, nick: info.nick || null, boardsCleared: 清掉幾張 });
+      return json({ ok: true, purged: pid, nick: info.nick || null, boardsCleared: 清掉幾張, friendsCleared: 清掉好友 });
     }
 
     // ---------- 管理用 ----------
@@ -1590,7 +1618,13 @@ export class PlayerDO {
        能擋住別人的是它的路徑：/internal/ 開頭的路徑只有 Worker 內部叫得到，
        對外沒有任何路由打得進來，而那條路由本身要 ADMIN_KEY。 */
     if (path === "/internal/admin-purge") {
-      const 資料 = { ok: true, nick: profile.nick || null, recoveryCode: profile.recoveryCode || null };
+      const 好友 = (await this.state.storage.get("friends")) || [];
+      const 資料 = {
+        ok: true,
+        nick: profile.nick || null,
+        recoveryCode: profile.recoveryCode || null,
+        friendIds: 好友.map((f) => f.id).filter(Boolean),
+      };
       await this.state.storage.deleteAll();
       return json(資料);
     }
@@ -1598,7 +1632,14 @@ export class PlayerDO {
     // 註銷前先驗身分、並把接回碼交出去（上層要用它去清索引）。這裡還不刪。
     if (path === "/internal/pre-delete") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
-      return json({ ok: true, recoveryCode: profile.recoveryCode || null, nick: profile.nick || null });
+      // 好友清單也要趁現在拿 —— 檔案刪掉之後這個 DO 就空了，讀不出它有哪些好友
+      const 好友 = (await this.state.storage.get("friends")) || [];
+      return json({
+        ok: true,
+        recoveryCode: profile.recoveryCode || null,
+        nick: profile.nick || null,
+        friendIds: 好友.map((f) => f.id).filter(Boolean),
+      });
     }
 
     // 真的刪。deleteAll 之後這個 Durable Object 就是空的，

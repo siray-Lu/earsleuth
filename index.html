@@ -659,6 +659,35 @@
   .avatar-opt:hover{ transform:translateY(-2px); }
   .avatar-opt.sel{ border-color:var(--accent2); background:rgba(98,184,255,.12); }
 
+  /* ---------- 主畫面固定成一屏 ----------
+     量過的數字：360×640 時內容比視窗高 46px。手機再扣掉狀態列與導覽列會更擠，
+     所以不能只靠「剛好塞得下」，要讓間距自己跟著視窗高度縮。
+
+     clamp 的中間值用 vh：螢幕矮就收緊，螢幕夠高就維持原本寬鬆的樣子。
+     overflow:hidden 是最後一道保險，只有在縮到底還是放不下時才會擋住捲動。
+     只套在主畫面 —— 好友、排行榜那些頁面本來就該能捲。 */
+  body[data-screen="screen-era"]{
+    height:100vh; height:100dvh;
+    overflow:hidden;
+    padding-top:clamp(8px, 2.2vh, 24px);
+    padding-bottom:clamp(8px, 2.2vh, 24px);
+  }
+  /* min(13vw, 7.4vh)：原本只看寬度，矮螢幕上標題會大到把下面的東西擠掉 */
+  body[data-screen="screen-era"] h1{
+    font-size:clamp(30px, min(13vw, 7.4vh), 58px);
+    margin:clamp(6px, 2.6vh, 26px) 0 clamp(6px, 1.6vh, 14px);
+  }
+  body[data-screen="screen-era"] .era-panel{
+    padding:clamp(10px, 1.8vh, 16px) 14px clamp(10px, 2vh, 18px);
+  }
+  body[data-screen="screen-era"] .era-panel .panel-title{
+    margin:clamp(2px, .6vh, 4px) 0 clamp(8px, 1.8vh, 14px);
+  }
+  body[data-screen="screen-era"] .era-list{ gap:clamp(7px, 1.5vh, 13px); }
+  body[data-screen="screen-era"] .era-card{ padding:clamp(9px, 1.5vh, 13px) 15px; }
+  body[data-screen="screen-era"] .home-nav{ margin-top:clamp(8px, 1.8vh, 16px); }
+  body[data-screen="screen-era"] .home-nav button{ padding:clamp(8px, 1.4vh, 12px) 2px; }
+
   /* ---------- 好友 ---------- */
   /* 主畫面從三個入口變四個。四欄在手機上每格只剩 ~78px，
      所以字要小一點、左右的內距要收掉，不然「全場競速」會被擠成兩行。 */
@@ -5310,7 +5339,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-11-01-0821';
+const APP_VERSION = '2026-11-01-0901';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
