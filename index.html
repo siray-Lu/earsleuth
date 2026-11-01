@@ -4625,7 +4625,9 @@ function 邀請卡片(m, 我送的){
   const 標 = document.createElement('b');
   標.textContent = 我送的 ? '你邀他一起玩' : '邀你一起玩連線對戰';
   const 細 = document.createElement('span');
-  細.textContent = '房號 ' + m.room + ' · ' + 時間標(m.at) + (過期 ? ' · 已過期' : '');
+  // 過期時按鍵本身就寫著「已過期」，副標不用再講一次 ——
+  // 但自己送的那張沒有按鍵，那就得靠副標說。
+  細.textContent = '房號 ' + m.room + ' · ' + 時間標(m.at) + ((過期 && 我送的) ? ' · 已過期' : '');
   文.appendChild(標); 文.appendChild(細);
   box.appendChild(文);
 
@@ -5676,7 +5678,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-11-01-1011';
+const APP_VERSION = '2026-11-01-1014';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
