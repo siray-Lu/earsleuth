@@ -30,6 +30,14 @@ const FRIEND_REQUEST_PER_HOUR = 60;
 const MAX_FRIENDS = 100;
 const MAX_PENDING = 50;
 
+// 一對好友留最近幾則訊息。不設上限的話，存訊息的那一筆會一直長大，
+// 最後在「送出訊息」那一刻寫不進去 —— 壞在最不該壞的地方。
+const MAX_CHAT = 200;
+// 單則訊息的字數。跟暱稱一樣走 cleanText，順便擋掉看不見的字元與雙向控制碼。
+const MAX_CHAT_LEN = 200;
+// 同一個 IP 一小時最多送幾則。擋的是腳本洗頻，正常聊天碰不到。
+const CHAT_SEND_PER_HOUR = 600;
+
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
@@ -157,6 +165,13 @@ async function authProfile(env, playerId, token) {
     const d = await r.json().catch(() => ({ ok: false }));
     return d.ok ? d.profile : null;
   } catch (e) { return null; }
+}
+
+/* 一對好友的聊天室。兩個 id 一定要排序 —— 不排的話 A 算出 "chat:A_B"、
+   B 算出 "chat:B_A"，兩個人會進到不同的聊天室，各說各話而且都看不到對方。 */
+function chatRoom(env, a, b) {
+  const 兩個 = [String(a), String(b)].sort();
+  return env.PLAYERS.get(env.PLAYERS.idFromName("chat:" + 兩個[0] + "_" + 兩個[1]));
 }
 
 // 好友清單上只存這三個欄位的快照。存整份檔案的話，對方一改戰績就過期，
@@ -685,6 +700,70 @@ export default {
       return json(await res.json().catch(() => ({ ok: false })), res.status);
     }
 
+    /* ---------- 聊天 ----------
+       只有好友聊得起來。讀訊息不另外查好友關係 —— 聊天室的位址是用
+       「自己的 id」算出來的，而 id 已經被 token 驗過，所以誰都只讀得到
+       自己有份的對話。刪好友時會把整間聊天室清掉，所以不是好友就是空的。
+
+       送訊息就一定要查：不查的話，任何人知道你的 id 就能丟訊息給你。 */
+    if (path.startsWith("/api/chat/") && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const me = await authProfile(env, body.playerId, body.token);
+      if (!me) return json({ ok: false, error: "bad token" }, 403);
+      const friendId = String(body.friendId || "");
+      if (!friendId) return json({ ok: false, error: "missing friend" }, 400);
+      const myStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + me.id));
+      const 打 = (stub, p, b) => stub.fetch("https://do" + p, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(b || {}),
+      }).then((r) => r.json().catch(() => ({ ok: false })));
+
+      // 讀。前端帶上次看到的 seq，只拿新的 —— 輪詢時不用每次搬整份紀錄回去。
+      if (path === "/api/chat/list") {
+        const r = await chatRoom(env, me.id, friendId).fetch("https://do/chat/list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ since: body.since }),
+        }).then((r) => r.json().catch(() => ({ ok: false })));
+        return json(r);
+      }
+
+      // 把跟這個人的未讀歸零。前端只在真的有未讀時才打，不然輪詢會白跑一趟。
+      if (path === "/api/chat/mark-read") {
+        return json(await 打(myStub, "/internal/chat-read", { friendId }));
+      }
+
+      if (path === "/api/chat/send") {
+        if (!(await withinRate(env, request, "chat", CHAT_SEND_PER_HOUR))) {
+          return json({ ok: false, error: "too many messages" }, 429);
+        }
+        const text = cleanText(body.text, MAX_CHAT_LEN);
+        if (!text) return json({ ok: false, error: "empty" }, 400);
+
+        // 送訊息一定要確認是好友。少了這一關，知道你 id 的人就能丟訊息給你。
+        const 我的 = await 打(myStub, "/api/friends/list", { playerId: me.id, token: body.token });
+        if (!(我的.friends || []).some((f) => f.id === friendId)) {
+          return json({ ok: false, error: "not friends" }, 403);
+        }
+
+        const r = await chatRoom(env, me.id, friendId).fetch("https://do/chat/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: me.id, text }),
+        }).then((r) => r.json().catch(() => ({ ok: false })));
+        if (!r.ok) return json(r, 500);
+
+        /* 未讀記在收訊者自己的檔案上，不是記在聊天室裡。
+           記在聊天室的話，好友清單上那一排紅點要一間一間翻過去才算得出來。 */
+        const themStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + friendId));
+        await 打(themStub, "/internal/chat-unread", { fromId: me.id });
+        return json(r);
+      }
+
+      return json({ ok: false, error: "not found" }, 404);
+    }
+
     /* ---------- 好友 ----------
        擺在通用 /api/ 轉送前面（好友沒有房號）。
 
@@ -763,6 +842,8 @@ export default {
         // 單方面刪會留下一邊看得到、一邊看不到的狀態，所以兩邊都拿掉
         const themStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + friendId));
         await 打(themStub, "/internal/friend-remove", { friendId: me.id });
+        /* 聊天紀錄不用在這裡清 —— 上面兩次 friend-remove 各自會清一次
+           （同一間，刪兩次無害）。這樣註銷帳號那條路也跟著一起處理掉了。 */
         return json({ ok: true });
       }
 
@@ -1382,6 +1463,40 @@ export class PlayerDO {
       return json({ ok: true });
     }
 
+    /* ---- 聊天室 ----
+       這幾條要擺在下面「找不到檔案就回 404」之前 —— 聊天室這個 instance
+       本來就沒有玩家檔案，照那條規則會被一律擋掉。
+       跟 rc: / nick: / ip: 一樣，是借用這個 class 的另一個命名空間。 */
+    if (path === "/chat/list") {
+      const msgs = (await this.state.storage.get("msgs")) || [];
+      const since = Math.floor(Number(body.since)) || 0;
+      return json({
+        ok: true,
+        msgs: since > 0 ? msgs.filter((m) => m.seq > since) : msgs,
+        seq: msgs.length ? msgs[msgs.length - 1].seq : 0,
+      });
+    }
+
+    if (path === "/chat/send") {
+      if (!body.from || !body.text) return json({ ok: false, error: "bad message" }, 400);
+      const msgs = (await this.state.storage.get("msgs")) || [];
+      /* seq 用遞增的序號而不是時間戳：同一毫秒送兩則會撞在一起，
+         而前端是靠「比上次大的就是新的」在抓增量的。 */
+      const seq = ((await this.state.storage.get("seq")) || 0) + 1;
+      const msg = { seq, from: body.from, text: body.text, at: Date.now() };
+      msgs.push(msg);
+      // 只留最近這幾則。超過就從最舊的開始丟。
+      if (msgs.length > MAX_CHAT) msgs.splice(0, msgs.length - MAX_CHAT);
+      await this.state.storage.put("msgs", msgs);
+      await this.state.storage.put("seq", seq);
+      return json({ ok: true, msg });
+    }
+
+    if (path === "/chat/clear") {
+      await this.state.storage.deleteAll();
+      return json({ ok: true });
+    }
+
     /* ---- 玩家檔案 ---- */
     if (path === "/api/profile/create") {
       const profile = {
@@ -1464,6 +1579,8 @@ export class PlayerDO {
         friends: await 清單("friends"),
         incoming: await 清單("incoming"),
         outgoing: await 清單("outgoing"),
+        // 未讀跟著好友清單一起回去，前端就不用為了幾顆紅點再跑一趟
+        unread: (await this.state.storage.get("unread")) || {},
       });
     }
 
@@ -1523,12 +1640,42 @@ export class PlayerDO {
       return json({ ok: true });
     }
 
+    /* 未讀數記在收訊者自己的檔案上。{ 對方的id: 幾則 }。
+       上限擋著：被洗頻的時候，數字本身不該變成另一個會無限長大的東西。 */
+    if (path === "/internal/chat-unread") {
+      const fromId = body.fromId;
+      if (!fromId) return json({ ok: false, error: "bad request" }, 400);
+      const unread = (await this.state.storage.get("unread")) || {};
+      unread[fromId] = Math.min((unread[fromId] || 0) + 1, 999);
+      await this.state.storage.put("unread", unread);
+      return json({ ok: true });
+    }
+
+    if (path === "/internal/chat-read") {
+      const unread = (await this.state.storage.get("unread")) || {};
+      if (unread[body.friendId]) {
+        delete unread[body.friendId];
+        await this.state.storage.put("unread", unread);
+      }
+      return json({ ok: true });
+    }
+
     if (path === "/internal/friend-remove") {
       const id = body.friendId;
       await 存清單("friends", (await 清單("friends")).filter((f) => f.id !== id));
       // 順手把待處理的邀請也清掉，不然刪完好友還會留著一封按不掉的幽靈邀請
       await 存清單("incoming", (await 清單("incoming")).filter((f) => f.id !== id));
       await 存清單("outgoing", (await 清單("outgoing")).filter((f) => f.id !== id));
+      // 未讀也要歸零，不然好友都刪了，紅點還掛著而且永遠點不掉
+      const unread = (await this.state.storage.get("unread")) || {};
+      if (unread[id] != null) { delete unread[id]; await this.state.storage.put("unread", unread); }
+
+      /* 聊天紀錄也一起清。刻意放在這裡而不是外層 —— 註銷帳號時外層要對
+         每個好友各打一次，再加上清聊天室就會超過 Cloudflare 一個請求 50 個
+         子請求的上限。每個 Durable Object 的呼叫有自己的額度，放進來就不算在那 50 裡。 */
+      try {
+        await chatRoom(this.env, profile.id, id).fetch("https://do/chat/clear", { method: "POST" });
+      } catch (e) { /* 清不掉只是留下一間沒人看得到的聊天室，不該讓刪好友失敗 */ }
       return json({ ok: true });
     }
 

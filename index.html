@@ -659,6 +659,76 @@
   .avatar-opt:hover{ transform:translateY(-2px); }
   .avatar-opt.sel{ border-color:var(--accent2); background:rgba(98,184,255,.12); }
 
+  /* ---------- 聊天 ----------
+     訊息區自己捲，輸入框永遠在最底下。整頁一起捲的話，
+     打字時輸入框會被推到看不見的地方。 */
+  body[data-screen="screen-chat"]{
+    height:100vh; height:100dvh;
+    overflow:hidden;
+    align-items:stretch;
+    padding:clamp(8px, 1.6vh, 16px) 14px;
+  }
+  body[data-screen="screen-chat"] .app{ display:flex; flex-direction:column; min-height:0; }
+  /* 聊天時大標題佔掉太多高度，而且這一頁本來就知道自己在哪 */
+  body[data-screen="screen-chat"] h1{ display:none; }
+  #screen-chat.active{ display:flex; flex-direction:column; min-height:0; flex:1; }
+  #screen-chat .era-panel{ display:flex; flex-direction:column; min-height:0; flex:1; }
+
+  .chat-head{
+    display:flex; align-items:center; gap:11px;
+    padding-bottom:10px; margin-bottom:10px;
+    border-bottom:1px solid var(--line);
+    flex:0 0 auto;
+  }
+  .chat-head .avatar{ width:40px; height:40px; font-size:20px; flex:0 0 auto; }
+  .chat-head b{ flex:1; font-size:16px; min-width:0; }
+  .chat-head button{
+    flex:0 0 auto; padding:7px 12px; border-radius:999px; cursor:pointer;
+    font-family:inherit; font-size:13px; font-weight:700;
+    border:1px solid var(--muted); background:transparent; color:var(--muted);
+  }
+
+  /* min-height:0 少了的話，flex 子元素不會縮，訊息一多就把輸入框擠出畫面 */
+  .chat-msgs{
+    flex:1; min-height:0; overflow-y:auto;
+    display:flex; flex-direction:column; gap:8px;
+    padding:2px 2px 6px;
+  }
+  .chat-empty{ color:var(--muted); font-size:13px; text-align:center; margin:auto 0; }
+  .chat-row{ display:flex; }
+  .chat-row.me{ justify-content:flex-end; }
+  .chat-bubble{
+    max-width:78%; padding:9px 13px; border-radius:16px;
+    font-size:14.5px; line-height:1.55;
+    background:var(--card); border:1px solid var(--line);
+    word-break:break-word; white-space:pre-wrap;
+  }
+  .chat-row.me .chat-bubble{
+    background:linear-gradient(135deg, rgba(167,139,250,.32), rgba(98,184,255,.26));
+    border-color:var(--accent2);
+  }
+  .chat-time{ display:block; margin-top:4px; font-size:11px; color:var(--muted); }
+
+  .chat-send{ display:flex; gap:8px; padding-top:10px; flex:0 0 auto; }
+  .chat-send .text-input{ flex:1; text-align:left; padding:11px 14px; }
+  .chat-send button{
+    flex:0 0 auto; padding:0 18px; border-radius:12px; cursor:pointer;
+    font-family:inherit; font-size:15px; font-weight:700; color:var(--text);
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    border:none;
+  }
+  .chat-send button:disabled{ opacity:.5; cursor:default; }
+
+  /* 好友卡片上的未讀數。跟主畫面那顆紅點同一個樣子，一眼就知道是同一件事。
+     選擇器要寫到這麼長：上面的 .fr-card .who span 比單一個 class 更 specific，
+     只寫 .fr-unread 會被它整個蓋掉 —— 變成撐滿整行的淡紫色長條。 */
+  .fr-card .who .fr-unread{
+    display:inline-block; min-width:18px; padding:0 5px;
+    border-radius:999px; background:var(--red); color:#fff;
+    font-size:11px; font-weight:700; line-height:18px; text-align:center;
+    box-shadow:0 0 8px rgba(248,113,113,.7);
+  }
+
   /* ---------- 主畫面固定成一屏 ----------
      量過的數字：360×640 時內容比視窗高 46px。手機再扣掉狀態列與導覽列會更擠，
      所以不能只靠「剛好塞得下」，要讓間距自己跟著視窗高度縮。
@@ -1269,6 +1339,23 @@
     </div>
   </section>
 
+  <!-- 聊天。只有好友之間聊得起來，刪好友時紀錄會一起清掉 -->
+  <section id="screen-chat" class="screen">
+    <div class="era-panel">
+      <div class="chat-head">
+        <span class="avatar" id="chat-avatar"></span>
+        <b id="chat-nick">-</b>
+        <button id="chat-back-btn">返回</button>
+      </div>
+      <div class="chat-msgs" id="chat-msgs"></div>
+      <p id="chat-error" style="color:var(--red); font-size:12.5px; min-height:16px; margin:4px 0 0; text-align:center;"></p>
+      <div class="chat-send">
+        <input id="chat-input" class="text-input" maxlength="200" placeholder="說點什麼…" autocomplete="off">
+        <button id="chat-send-btn">送出</button>
+      </div>
+    </div>
+  </section>
+
   <!-- 好友的檔案。資料是點進來時現查的，不是清單上那份快照 -->
   <section id="screen-friend-profile" class="screen">
     <div class="era-panel">
@@ -1280,6 +1367,7 @@
       <div id="fp-stats" style="margin-top:14px;"></div>
       <p id="fp-error" style="text-align:center; color:var(--red); font-size:13px; min-height:18px; margin:8px 0 0;"></p>
       <div class="actions-center" style="margin-top:14px;">
+        <button class="btn-main" id="fp-chat-btn">聊天</button>
         <button class="btn-ghost" id="fp-remove-btn">刪除好友</button>
         <button class="btn-ghost" id="fp-back-btn">返回</button>
       </div>
@@ -2153,6 +2241,11 @@ function showScreen(id){
     讀好友清單().then(()=> 更新好友紅點());
   }
 
+  /* 離開聊天就把輪詢停掉。不停的話它會一直在背景每 2.5 秒打一次伺服器，
+     而且使用者完全看不出來。手機上的上一頁也會走到這裡。 */
+  if(離開的 === 'screen-chat' && id !== 'screen-chat' && typeof 停止聊天輪詢 === 'function'){
+    停止聊天輪詢();
+  }
   if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
   // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
   if(typeof renderIdentity === 'function') renderIdentity();
@@ -4204,7 +4297,7 @@ document.getElementById('edit-save-btn').addEventListener('click', async ()=>{
    三份清單（好友、收到的邀請、已送出）都從同一支端點一次拿回來，
    前端靠它判斷搜尋結果上那顆鍵該寫「加好友」「已送出」還是「已經是好友」。 */
 
-const 好友 = { friends: [], incoming: [], outgoing: [], 找到的: null, 看誰的檔案: null };
+const 好友 = { friends: [], incoming: [], outgoing: [], unread: {}, 找到的: null, 看誰的檔案: null };
 
 // 沒有伺服器身分（還沒同步的離線檔案）就整個用不了，要講清楚而不是讓按鍵沒反應
 function 有身分(){ return !!(profile && profile.token && !profile.pendingSync); }
@@ -4221,15 +4314,21 @@ async function 讀好友清單(){
     好友.friends = d.friends || [];
     好友.incoming = d.incoming || [];
     好友.outgoing = d.outgoing || [];
+    好友.unread = d.unread || {};
     return true;
   }catch(e){ return false; }
 }
 
-// 主畫面那顆好友鍵右上角的紅點。沒有待處理的邀請就不顯示。
+/* 主畫面那顆好友鍵右上角的紅點。待處理的邀請 + 沒看過的訊息一起算 ——
+   對使用者來說都是「有東西等我處理」，分成兩顆點只會讓人不知道該看哪個。 */
+function 未讀總數(){
+  return Object.values(好友.unread || {}).reduce((a,b)=> a + (Number(b) || 0), 0);
+}
+
 function 更新好友紅點(){
   const btn = document.getElementById('go-friends-btn');
   if(!btn) return;
-  const n = 好友.incoming.length;
+  const n = 好友.incoming.length + 未讀總數();
   if(n > 0) btn.dataset.count = n > 99 ? '99+' : String(n);
   else btn.removeAttribute('data-count');
 }
@@ -4334,9 +4433,19 @@ function 渲染好友頁(){
     單.appendChild(e);
   }else{
     好友.friends.forEach(f=>{
-      單.appendChild(人卡片(f, '點一下看他的紀錄', [
-        { label:'刪除', ghost:true, run:(b)=> 刪好友(f.id, b) },
-      ], ()=> 開啟好友檔案(f.id)));
+      const 沒看過 = Number(好友.unread[f.id]) || 0;
+      const 卡 = 人卡片(f, 沒看過 ? 沒看過 + ' 則新訊息' : '點一下看他的紀錄', [
+        { label:'聊天', run:()=> 開啟聊天(f.id) },
+      ], ()=> 開啟好友檔案(f.id));
+      // 未讀的數字貼在名字旁邊 —— 貼在卡片角落的話，清單一長就看不出是誰的
+      if(沒看過){
+        const 標 = document.createElement('span');
+        標.className = 'fr-unread';
+        標.textContent = 沒看過 > 99 ? '99+' : String(沒看過);
+        標.style.marginLeft = '7px';
+        卡.querySelector('.who b').appendChild(標);
+      }
+      單.appendChild(卡);
     });
   }
   更新好友紅點();
@@ -4397,7 +4506,10 @@ async function 開啟好友檔案(id){
   document.getElementById('fp-since').textContent = '';
   document.getElementById('fp-stats').innerHTML = '';
   document.getElementById('fp-error').textContent = '';
-  document.getElementById('fp-remove-btn').hidden = !好友.friends.some(f=>f.id === id);
+  const 是好友 = 好友.friends.some(f=>f.id === id);
+  document.getElementById('fp-remove-btn').hidden = !是好友;
+  // 還不是好友的人（從搜尋結果點進來的）沒得聊 —— 伺服器也會擋
+  document.getElementById('fp-chat-btn').hidden = !是好友;
   showScreen('screen-friend-profile');
 
   try{
@@ -4417,6 +4529,136 @@ async function 開啟好友檔案(id){
     document.getElementById('fp-error').textContent = '連不上伺服器';
   }
 }
+
+/* ---------- 聊天 ----------
+   開著的時候固定輪詢，帶上「看過的最後一個序號」，所以每次只拿新的，
+   不是每兩秒把整份紀錄搬回來一次。離開畫面一定要把輪詢停掉 ——
+   不停的話會一直在背景打伺服器，而且使用者完全看不出來。 */
+const 聊天 = { 對方: null, 最後序號: 0, 輪詢: null, 送出中: false };
+const 聊天輪詢間隔 = 2500;
+
+function 時間標(ts){
+  const d = new Date(ts);
+  const 今天 = new Date();
+  const 同一天 = d.toDateString() === 今天.toDateString();
+  const hh = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  return 同一天 ? hh : (d.getMonth()+1) + '/' + d.getDate() + ' ' + hh;
+}
+
+function 畫訊息(msgs, 接在後面){
+  const box = document.getElementById('chat-msgs');
+  if(!接在後面) box.innerHTML = '';
+  const 空的 = box.querySelector('.chat-empty');
+  if(空的 && msgs.length) 空的.remove();
+  msgs.forEach(m=>{
+    const row = document.createElement('div');
+    row.className = 'chat-row' + (m.from === profile.id ? ' me' : '');
+    const b = document.createElement('div');
+    b.className = 'chat-bubble';
+    // textContent 而不是 innerHTML —— 訊息是別人打的，當成文字處理
+    b.textContent = m.text;
+    const t = document.createElement('span');
+    t.className = 'chat-time';
+    t.textContent = 時間標(m.at);
+    b.appendChild(t);
+    row.appendChild(b);
+    box.appendChild(row);
+  });
+  if(!box.children.length){
+    const e = document.createElement('div');
+    e.className = 'chat-empty';
+    e.textContent = '還沒有訊息。打個招呼吧。';
+    box.appendChild(e);
+  }
+  // 永遠捲到最底下。新訊息進來時使用者想看的是最新那則。
+  box.scrollTop = box.scrollHeight;
+}
+
+async function 抓新訊息(){
+  if(!聊天.對方) return;
+  try{
+    const d = await friendsApi('/api/chat/list', { friendId: 聊天.對方, since: 聊天.最後序號 });
+    if(!d || !d.ok) return;
+    const 新的 = d.msgs || [];
+    if(新的.length){
+      畫訊息(新的, 聊天.最後序號 > 0);
+      聊天.最後序號 = d.seq || 聊天.最後序號;
+      // 在這個畫面上看到的就算看過了，把未讀歸零
+      await friendsApi('/api/chat/mark-read', { friendId: 聊天.對方 });
+      好友.unread[聊天.對方] = 0;
+      更新好友紅點();
+    }
+  }catch(e){ /* 連不上就等下一輪，不要在畫面上一直閃錯誤 */ }
+}
+
+function 停止聊天輪詢(){
+  if(聊天.輪詢){ clearInterval(聊天.輪詢); 聊天.輪詢 = null; }
+  聊天.對方 = null;
+}
+
+async function 開啟聊天(id){
+  const 他 = 好友.friends.find(f=>f.id === id);
+  if(!他) return;
+  聊天.對方 = id;
+  聊天.最後序號 = 0;
+  paintAvatar(document.getElementById('chat-avatar'), 他.avatar);
+  document.getElementById('chat-nick').textContent = 他.nick;
+  document.getElementById('chat-error').textContent = '';
+  document.getElementById('chat-input').value = '';
+  畫訊息([], false);
+  showScreen('screen-chat');
+
+  await 抓新訊息();
+  // 進來時就算一則新的都沒有，未讀也該清掉（例如訊息早就讀過但紅點還在）
+  if(好友.unread[聊天.對方]){
+    try{ await friendsApi('/api/chat/mark-read', { friendId: 聊天.對方 }); }catch(e){}
+    好友.unread[聊天.對方] = 0;
+    更新好友紅點();
+  }
+  停止聊天輪詢();
+  聊天.對方 = id;
+  聊天.輪詢 = setInterval(抓新訊息, 聊天輪詢間隔);
+}
+
+async function 送出訊息(){
+  const input = document.getElementById('chat-input');
+  const err = document.getElementById('chat-error');
+  const btn = document.getElementById('chat-send-btn');
+  const text = input.value.trim();
+  if(!text || !聊天.對方 || 聊天.送出中) return;
+
+  聊天.送出中 = true;
+  btn.disabled = true;
+  err.textContent = '';
+  try{
+    const d = await friendsApi('/api/chat/send', { friendId: 聊天.對方, text });
+    if(d && d.ok && d.msg){
+      input.value = '';
+      畫訊息([d.msg], true);
+      聊天.最後序號 = Math.max(聊天.最後序號, d.msg.seq);
+    }else if(d && d.error === 'not friends'){
+      err.textContent = '你們已經不是好友了';
+    }else if(d && d.error === 'too many messages'){
+      err.textContent = '送太快了，等一下再說';
+    }else{
+      err.textContent = '送不出去，等一下再試';
+    }
+  }catch(e){
+    err.textContent = '連不上伺服器';
+  }
+  聊天.送出中 = false;
+  btn.disabled = false;
+  input.focus();
+}
+
+document.getElementById('chat-send-btn').addEventListener('click', 送出訊息);
+document.getElementById('chat-input').addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){ e.preventDefault(); 送出訊息(); }
+});
+document.getElementById('chat-back-btn').addEventListener('click', ()=> 返回('screen-friends'));
+document.getElementById('fp-chat-btn').addEventListener('click', ()=>{
+  if(好友.看誰的檔案) 開啟聊天(好友.看誰的檔案);
+});
 
 document.getElementById('go-friends-btn').addEventListener('click', async ()=>{
   document.getElementById('fr-error').textContent = '';
@@ -5339,7 +5581,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-11-01-0901';
+const APP_VERSION = '2026-11-01-0939';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
