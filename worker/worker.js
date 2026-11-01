@@ -22,6 +22,13 @@ const MAX_QUESTIONS = 50;
 // 抓這個數字是為了讓「一家人共用同一個對外 IP」還是夠用。
 const CREATE_PROFILE_PER_HOUR = 20;
 const CREATE_ROOM_PER_HOUR = 40;
+// 好友邀請不擋的話，一支腳本就能把所有人的收件匣塞滿
+const FRIEND_REQUEST_PER_HOUR = 60;
+
+// 好友與待處理邀請的數量上限。兩個都存在玩家自己的 Durable Object 裡，
+// 不設上限的話單筆會無限長大，最後寫不進去 —— 連改名字都會失敗。
+const MAX_FRIENDS = 100;
+const MAX_PENDING = 50;
 
 function corsHeaders() {
   return {
@@ -71,6 +78,92 @@ const AVATAR_COLORS = [
    新的人挑不到，已經在用的人留著。 */
 const LEGACY_EMOJIS = ["🤖"];
 const LEGACY_COLORS = ["#2dd4bf"];
+
+/* ---------- 名字唯一 ----------
+   名字要當成找人的依據，就不能有兩個人同名。做法跟接回碼索引一樣：
+   一個名字一個 Durable Object（"nick:<比較形式>"），誰先登記誰擁有。
+
+   比較用的形式要比顯示用的更嚴格，不然「小明」「小 明」「ｓｍａｌｌ」
+   都能各自註冊，看起來是同一個人卻是三個帳號 —— 那唯一性就沒有意義了。
+   NFKC 會把全形拉成半形，再轉小寫、拿掉所有空白。 */
+function nickKey(nick) {
+  return String(nick == null ? "" : nick).normalize("NFKC").toLowerCase().replace(/s+/g, "");
+}
+
+function nickIndex(env, nick) {
+  return env.PLAYERS.get(env.PLAYERS.idFromName("nick:" + nickKey(nick)));
+}
+
+// 登記成功回 true。已經是自己的也算成功（補登記時會重複呼叫）。
+async function claimNick(env, nick, playerId) {
+  if (!nickKey(nick)) return false;
+  try {
+    const r = await nickIndex(env, nick).fetch("https://do/idx/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId }),
+    });
+    const d = await r.json().catch(() => ({ ok: false }));
+    return !!d.ok;
+  } catch (e) { return false; }
+}
+
+// 放掉名字。只有擁有者放得掉 —— 不然知道別人的名字就能把它洗掉。
+async function releaseNick(env, nick, playerId) {
+  if (!nickKey(nick)) return;
+  try {
+    await nickIndex(env, nick).fetch("https://do/idx/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId }),
+    });
+  } catch (e) { /* 放不掉只是那個名字暫時佔著，不影響當下這次操作 */ }
+}
+
+async function lookupNick(env, nick) {
+  if (!nickKey(nick)) return null;
+  try {
+    const r = await nickIndex(env, nick).fetch("https://do/idx/lookup");
+    const d = await r.json().catch(() => ({ ok: false }));
+    return d.ok ? d.playerId : null;
+  } catch (e) { return null; }
+}
+
+// 拿某個人的公開檔案（頭像、暱稱、戰績）。查無此人回 null。
+async function publicProfileOf(env, playerId) {
+  if (!playerId) return null;
+  try {
+    const stub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + playerId));
+    const r = await stub.fetch("https://do/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId }),
+    });
+    const d = await r.json().catch(() => ({ ok: false }));
+    return d.ok ? d.profile : null;
+  } catch (e) { return null; }
+}
+
+// 驗身分，順便把自己的檔案拿回來。好友相關的端點都要先過這一關。
+async function authProfile(env, playerId, token) {
+  if (!playerId || !token) return null;
+  try {
+    const stub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + playerId));
+    const r = await stub.fetch("https://do/api/profile/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId, token }),
+    });
+    const d = await r.json().catch(() => ({ ok: false }));
+    return d.ok ? d.profile : null;
+  } catch (e) { return null; }
+}
+
+// 好友清單上只存這三個欄位的快照。存整份檔案的話，對方一改戰績就過期，
+// 而且每個人的 DO 裡都躺著別人的完整資料。
+function friendCard(p) {
+  return p ? { id: p.id, nick: p.nick, avatar: p.avatar } : null;
+}
 
 // 接回碼刻意拿掉 0/O/1/I/L 這些看起來很像的字，不然使用者會抄錯然後怪遊戲壞掉
 const RC_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -331,6 +424,14 @@ export default {
           return json({ ok: false, error: "too many profiles" }, 429);
         }
         const playerId = randomId(12);
+
+        /* 名字要唯一，所以先登記再建檔。反過來的話，兩個人同時用同一個名字送出，
+           兩份檔案都會存下去，等發現撞名已經來不及拆了。 */
+        const nick = cleanNick(body.nick);
+        if (!(await claimNick(env, nick, playerId))) {
+          return json({ ok: false, error: "nick taken" }, 409);
+        }
+
         let recoveryCode = null;
         for (let attempt = 0; attempt < 5; attempt++) {
           const cand = randRecoveryCode();
@@ -343,15 +444,21 @@ export default {
           const d = await r.json();
           if (d.ok) { recoveryCode = cand; break; }
         }
-        if (!recoveryCode) return json({ ok: false, error: "could not allocate recovery code" }, 500);
+        if (!recoveryCode) {
+          // 檔案沒建成，名字就不能留著佔位，不然那個名字永遠沒人用得到
+          await releaseNick(env, nick, playerId);
+          return json({ ok: false, error: "could not allocate recovery code" }, 500);
+        }
 
         const stub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + playerId));
         const res = await stub.fetch("https://do/api/profile/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, recoveryCode, nick: body.nick, avatar: body.avatar }),
+          body: JSON.stringify({ playerId, recoveryCode, nick, avatar: body.avatar, nameOwned: true }),
         });
-        return json(await res.json(), res.status);
+        const created = await res.json().catch(() => ({ ok: false }));
+        if (!created.ok) await releaseNick(env, nick, playerId);
+        return json(created, res.status);
       }
 
       /* 註銷帳號。要跨三個 Durable Object，所以不能走下面那條「原封不動轉給
@@ -380,7 +487,10 @@ export default {
         const del = await delRes.json().catch(() => ({ ok: false }));
         if (!del.ok) return json(del, delRes.status);
 
-        // ③ 釋放接回碼，讓那串碼可以重新發給別人
+        // ③ 名字放回去，不然帳號沒了那個名字卻永遠佔著沒人用得到
+        if (pre.nick) await releaseNick(env, pre.nick, pid);
+
+        // ④ 釋放接回碼，讓那串碼可以重新發給別人
         if (pre.recoveryCode) {
           try {
             const idx = env.PLAYERS.get(env.PLAYERS.idFromName("rc:" + pre.recoveryCode));
@@ -392,7 +502,7 @@ export default {
           } catch (e) { console.error("release rc failed:", String(e && e.message || e)); }
         }
 
-        // ④ 從所有排行榜上撤下來。不清的話，帳號沒了但暱稱和成績還掛在榜上。
+        // ⑤ 從所有排行榜上撤下來。不清的話，帳號沒了但暱稱和成績還掛在榜上。
         const 榜 = [];
         for (const era of ERAS) for (const n of TIMED_COUNTS) 榜.push(era + "_" + n);
         榜.push("live_total", "live_streak");
@@ -432,6 +542,31 @@ export default {
         }
       }
 
+      /* 改名字。名字唯一，所以不能直接轉給玩家自己的 DO —— 要先去索引登記新的，
+         登記成功才真的改，改完再把舊的放掉。順序反過來（先改再登記）的話，
+         登記失敗就會留下一個「畫面上叫 A、索引裡還是 B」的帳號。 */
+      if (path === "/api/profile/update" && body.nick != null) {
+        const me = await authProfile(env, playerId, body.token);
+        if (!me) return json({ ok: false, error: "bad token" }, 403);
+        const 新名字 = cleanNick(body.nick);
+        if (nickKey(新名字) !== nickKey(me.nick)) {
+          if (!(await claimNick(env, 新名字, playerId))) {
+            return json({ ok: false, error: "nick taken" }, 409);
+          }
+          const stub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + playerId));
+          const res = await stub.fetch("https://do/api/profile/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...body, playerId, nick: 新名字, nameOwned: true }),
+          });
+          const d = await res.json().catch(() => ({ ok: false }));
+          // 改成功才放掉舊名字；改失敗就把剛登記的新名字還回去
+          if (d.ok) await releaseNick(env, me.nick, playerId);
+          else await releaseNick(env, 新名字, playerId);
+          return json(d, res.status);
+        }
+      }
+
       if (!playerId) return json({ ok: false, error: "missing playerId" }, 400);
       const stub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + playerId));
       const res = await stub.fetch("https://do" + path, {
@@ -440,6 +575,58 @@ export default {
         body: JSON.stringify({ ...body, playerId }),
       });
       return json(await res.json().catch(() => ({ ok: false, error: "bad upstream response" })), res.status);
+    }
+
+    /* ---------- 管理用：清掉一個帳號 ----------
+       不需要那個帳號的 token，所以一定要 ADMIN_KEY。
+       清的順序跟本人註銷一樣：先拿資料 → 刪檔案 → 放掉名字與接回碼 → 清榜。
+       先刪檔案是因為檔案一不在，任何端點都回 404，就算後面幾步失敗，
+       也不會留下一個還能用的帳號。 */
+    if (path === "/api/admin/profile-purge" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      if (!env.ADMIN_KEY || body.key !== env.ADMIN_KEY) {
+        return json({ ok: false, error: "forbidden" }, 403);
+      }
+      const pid = String(body.playerId || "");
+      if (!pid) return json({ ok: false, error: "missing playerId" }, 400);
+
+      const pStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + pid));
+      const infoRes = await pStub.fetch("https://do/internal/admin-purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const info = await infoRes.json().catch(() => ({ ok: false }));
+      if (!info.ok) return json(info, infoRes.status);
+
+      if (info.nick) await releaseNick(env, info.nick, pid);
+      if (info.recoveryCode) {
+        try {
+          await env.PLAYERS.get(env.PLAYERS.idFromName("rc:" + info.recoveryCode))
+            .fetch("https://do/idx/release", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ playerId: pid }),
+            });
+        } catch (e) { console.error("purge: release rc failed", String(e)); }
+      }
+
+      const 榜 = [];
+      for (const era of ERAS) for (const n of TIMED_COUNTS) 榜.push(era + "_" + n);
+      榜.push("live_total", "live_streak");
+      let 清掉幾張 = 0;
+      for (const name of 榜) {
+        try {
+          const r = await env.BOARDS.get(env.BOARDS.idFromName("lb:" + name)).fetch("https://do/forget", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId: pid }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (d && d.removed) 清掉幾張++;
+        } catch (e) { /* 單張清不掉不該讓整個清除失敗 */ }
+      }
+      return json({ ok: true, purged: pid, nick: info.nick || null, boardsCleared: 清掉幾張 });
     }
 
     // ---------- 管理用 ----------
@@ -468,6 +655,90 @@ export default {
         body: JSON.stringify({ playerId: body.playerId }),
       });
       return json(await res.json().catch(() => ({ ok: false })), res.status);
+    }
+
+    /* ---------- 好友 ----------
+       擺在通用 /api/ 轉送前面（好友沒有房號）。
+
+       每一支都先驗 token，搜尋也不例外 —— 不驗的話這支就是一個
+       「餵名字進去就吐出別人戰績」的公開端點，誰都能拿去掃整個遊戲。 */
+    if (path.startsWith("/api/friends/") && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const me = await authProfile(env, body.playerId, body.token);
+      if (!me) return json({ ok: false, error: "bad token" }, 403);
+      const myStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + me.id));
+      const 打 = (stub, p, b) => stub.fetch("https://do" + p, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(b || {}),
+      }).then((r) => r.json().catch(() => ({ ok: false })));
+
+      // 三份清單一起回。前端靠它判斷每個人該顯示「加好友」還是「已送出」，
+      // 所以不需要另外有一支「我跟這個人是什麼關係」的端點。
+      if (path === "/api/friends/list") {
+        return json(await 打(myStub, "/api/friends/list", { playerId: me.id, token: body.token }));
+      }
+
+      // 用名字找人。名字是唯一的，所以這是精準查找，不是模糊搜尋。
+      if (path === "/api/friends/search") {
+        const id = await lookupNick(env, body.nick);
+        const found = id ? await publicProfileOf(env, id) : null;
+        return json({ ok: true, found: found || null, self: !!found && found.id === me.id });
+      }
+
+      if (path === "/api/friends/request") {
+        if (!(await withinRate(env, request, "friendreq", FRIEND_REQUEST_PER_HOUR))) {
+          return json({ ok: false, error: "too many requests" }, 429);
+        }
+        const targetId = String(body.targetId || "");
+        if (!targetId) return json({ ok: false, error: "missing target" }, 400);
+        if (targetId === me.id) return json({ ok: false, error: "self" }, 400);
+        const them = await publicProfileOf(env, targetId);
+        if (!them) return json({ ok: false, error: "not found" }, 404);
+
+        /* 對方剛好也寄了一封給我 —— 那兩邊的意思已經一致，沒必要讓誰再按一次確認。
+           直接當成接受，不然會變成兩個人互相盯著對方的邀請，等對方先動。 */
+        const 我的 = await 打(myStub, "/api/friends/list", { playerId: me.id, token: body.token });
+        const themStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + targetId));
+        if ((我的.incoming || []).some((f) => f.id === targetId)) {
+          await 打(myStub, "/internal/friend-respond", { fromId: targetId, accept: true, card: friendCard(them) });
+          await 打(themStub, "/internal/friend-resolved", { byId: me.id, accept: true, card: friendCard(me) });
+          return json({ ok: true, becameFriends: true });
+        }
+        if ((我的.friends || []).some((f) => f.id === targetId)) return json({ ok: true, already: true });
+
+        // 先寫對方的收件匣，寫成功了才記在自己的寄件匣 —— 反過來的話，
+        // 對方那邊失敗時我會看到一封「已送出」但對方永遠收不到的邀請。
+        const r = await 打(themStub, "/internal/friend-incoming", { from: friendCard(me) });
+        if (!r.ok) return json(r, 409);
+        await 打(myStub, "/internal/friend-outgoing", { to: friendCard(them) });
+        return json({ ok: true });
+      }
+
+      if (path === "/api/friends/respond") {
+        const fromId = String(body.fromId || "");
+        if (!fromId) return json({ ok: false, error: "missing from" }, 400);
+        const accept = body.accept === true;
+        const them = await publicProfileOf(env, fromId);
+        const themStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + fromId));
+        // 先處理自己這邊 —— 對方的檔案就算已經不在了（註銷掉了），
+        // 我的收件匣也該清掉，不然那封邀請會永遠卡在那裡按不掉。
+        const mine = await 打(myStub, "/internal/friend-respond", { fromId, accept, card: friendCard(them) });
+        if (them) await 打(themStub, "/internal/friend-resolved", { byId: me.id, accept, card: friendCard(me) });
+        return json(mine);
+      }
+
+      if (path === "/api/friends/remove") {
+        const friendId = String(body.friendId || "");
+        if (!friendId) return json({ ok: false, error: "missing friend" }, 400);
+        await 打(myStub, "/internal/friend-remove", { friendId });
+        // 單方面刪會留下一邊看得到、一邊看不到的狀態，所以兩邊都拿掉
+        const themStub = env.PLAYERS.get(env.PLAYERS.idFromName("player:" + friendId));
+        await 打(themStub, "/internal/friend-remove", { friendId: me.id });
+        return json({ ok: true });
+      }
+
+      return json({ ok: false, error: "not found" }, 404);
     }
 
     // ---------- 排行榜 ----------
@@ -1030,8 +1301,12 @@ export class RoomDO {
    想用接回碼找人就得自己做一層索引。
 ======================================================= */
 export class PlayerDO {
-  constructor(state) {
+  // env 是給名字索引用的：補登記名字時要去打另一個 Durable Object。
+  // 少收這個參數的話 this.env 會是 undefined，而且是在 try 裡面爆掉，
+  // 看起來就只是「登記失敗」，不會有任何錯誤訊息。
+  constructor(state, env) {
     this.state = state;
+    this.env = env;
   }
 
   async fetch(request) {
@@ -1040,9 +1315,11 @@ export class PlayerDO {
 
     /* ---- 接回碼索引 ---- */
     if (path === "/idx/claim") {
-      // 已經被佔走就回 false，讓上層換一組再試，絕對不能覆蓋
+      // 已經被佔走就回 false，讓上層換一組再試，絕對不能覆蓋。
+      // 但本來就是自己的要算成功 —— 舊帳號補登記名字時會重複呼叫到這裡，
+      // 回 taken 的話它會以為自己的名字被別人搶走了。
       const owner = await this.state.storage.get("owner");
-      if (owner) return json({ ok: false, error: "taken" });
+      if (owner) return owner === body.playerId ? json({ ok: true, already: true }) : json({ ok: false, error: "taken" });
       await this.state.storage.put("owner", body.playerId);
       return json({ ok: true });
     }
@@ -1084,6 +1361,8 @@ export class PlayerDO {
         nick: cleanNick(body.nick),
         avatar: cleanAvatar(body.avatar),
         recoveryCode: body.recoveryCode,
+        // 名字索引登記成功才會帶這個進來。沒有的話下次驗身分會再補登記一次。
+        nameOwned: body.nameOwned === true,
         token: randomId(32),
         createdAt: Date.now(),
         stats: { games: 0, correct: 0, total: 0, timedBest: {} },
@@ -1137,6 +1416,92 @@ export class PlayerDO {
 
     if (path === "/api/profile") {
       return json({ ok: true, profile: publicProfile(profile) });
+    }
+
+    /* ---- 好友 ----
+       三份清單都在玩家自己的 Durable Object 裡：
+         friends   已經成立的好友
+         incoming  別人寄來、還沒處理的邀請
+         outgoing  自己寄出去、還沒有回音的邀請
+       每一筆只存 id／暱稱／頭像的快照。存整份檔案的話，對方一打完一場就過期，
+       而且每個人的 DO 裡都會躺著一堆別人的完整資料。
+       快照在對方改名字之後會過期，所以點進對方的檔案時是現查的。 */
+    const 清單 = async (k) => (await this.state.storage.get(k)) || [];
+    const 存清單 = (k, v) => this.state.storage.put(k, v);
+
+    if (path === "/api/friends/list") {
+      if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
+      return json({
+        ok: true,
+        friends: await 清單("friends"),
+        incoming: await 清單("incoming"),
+        outgoing: await 清單("outgoing"),
+      });
+    }
+
+    // 別人寄邀請給我。只有 Worker 內部叫得到，對外沒有路徑打得進來。
+    if (path === "/internal/friend-incoming") {
+      const from = body.from;
+      if (!from || !from.id) return json({ ok: false, error: "bad request" }, 400);
+      const friends = await 清單("friends");
+      // 已經是好友、或同一封已經躺在收件匣裡，都當成成功 —— 重送不該變成錯誤
+      if (friends.some((f) => f.id === from.id)) return json({ ok: true, already: true });
+      const incoming = await 清單("incoming");
+      if (incoming.some((f) => f.id === from.id)) return json({ ok: true, already: true });
+      if (friends.length >= MAX_FRIENDS) return json({ ok: false, error: "friends full" });
+      if (incoming.length >= MAX_PENDING) return json({ ok: false, error: "inbox full" });
+      incoming.push({ ...from, at: Date.now() });
+      await 存清單("incoming", incoming);
+      return json({ ok: true });
+    }
+
+    if (path === "/internal/friend-outgoing") {
+      const to = body.to;
+      if (!to || !to.id) return json({ ok: false, error: "bad request" }, 400);
+      const outgoing = await 清單("outgoing");
+      if (outgoing.some((f) => f.id === to.id)) return json({ ok: true, already: true });
+      if (outgoing.length >= MAX_PENDING) return json({ ok: false, error: "outbox full" });
+      outgoing.push({ ...to, at: Date.now() });
+      await 存清單("outgoing", outgoing);
+      return json({ ok: true });
+    }
+
+    // 我回覆了一封邀請（接受或拒絕）
+    if (path === "/internal/friend-respond") {
+      const fromId = body.fromId;
+      await 存清單("incoming", (await 清單("incoming")).filter((f) => f.id !== fromId));
+      if (body.accept === true && body.card && body.card.id) {
+        const friends = await 清單("friends");
+        if (friends.length >= MAX_FRIENDS) return json({ ok: false, error: "friends full" });
+        if (!friends.some((f) => f.id === fromId)) {
+          friends.push({ ...body.card, since: Date.now() });
+          await 存清單("friends", friends);
+        }
+      }
+      return json({ ok: true, accepted: body.accept === true });
+    }
+
+    // 對方回覆了我寄出去的那封邀請
+    if (path === "/internal/friend-resolved") {
+      const byId = body.byId;
+      await 存清單("outgoing", (await 清單("outgoing")).filter((f) => f.id !== byId));
+      if (body.accept === true && body.card && body.card.id) {
+        const friends = await 清單("friends");
+        if (!friends.some((f) => f.id === byId) && friends.length < MAX_FRIENDS) {
+          friends.push({ ...body.card, since: Date.now() });
+          await 存清單("friends", friends);
+        }
+      }
+      return json({ ok: true });
+    }
+
+    if (path === "/internal/friend-remove") {
+      const id = body.friendId;
+      await 存清單("friends", (await 清單("friends")).filter((f) => f.id !== id));
+      // 順手把待處理的邀請也清掉，不然刪完好友還會留著一封按不掉的幽靈邀請
+      await 存清單("incoming", (await 清單("incoming")).filter((f) => f.id !== id));
+      await 存清單("outgoing", (await 清單("outgoing")).filter((f) => f.id !== id));
+      return json({ ok: true });
     }
 
     if (path === "/api/profile/restore") {
@@ -1201,13 +1566,39 @@ export class PlayerDO {
 
     if (path === "/api/profile/verify") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
-      return json({ ok: true, profile: publicProfile(profile) });
+
+      /* 名字唯一是後來才加的，舊檔案從來沒登記過，而伺服器又沒有「列出所有玩家」
+         的端點，沒辦法一次補完。所以改成每次驗身分順手登記一次：
+         搶到就是它的，搶不到（同名的人先登記了）就維持現狀 —— 名字照樣用，
+         只是不擁有它，也就改不回來。現在那三個「123」就是這樣共存的。
+         登記成功之後就記在檔案裡，之後不會再多打這一次。 */
+      /* 搶不到的那些（現在有兩個帳號叫「123」但不擁有這個名字）永遠搶不到，
+         所以不能每次開遊戲都重試一次 —— 那是每次都白打一個 Durable Object。
+         失敗就記下時間，隔一天再試。隔一天還是有意義的：原本的擁有者
+         可能改名字或註銷，那個名字就空出來了。 */
+      const 一天 = 24 * 60 * 60 * 1000;
+      if (!profile.nameOwned && Date.now() - (profile.nameTriedAt || 0) > 一天) {
+        const 搶到了 = await claimNick(this.env, profile.nick, profile.id);
+        profile.nameOwned = 搶到了;
+        profile.nameTriedAt = Date.now();
+        await this.state.storage.put("profile", profile);
+      }
+      return json({ ok: true, profile: publicProfile(profile), nameOwned: profile.nameOwned === true });
+    }
+
+    /* 管理者清除。刻意不驗 token —— 會用到這支就是因為 token 已經沒了。
+       能擋住別人的是它的路徑：/internal/ 開頭的路徑只有 Worker 內部叫得到，
+       對外沒有任何路由打得進來，而那條路由本身要 ADMIN_KEY。 */
+    if (path === "/internal/admin-purge") {
+      const 資料 = { ok: true, nick: profile.nick || null, recoveryCode: profile.recoveryCode || null };
+      await this.state.storage.deleteAll();
+      return json(資料);
     }
 
     // 註銷前先驗身分、並把接回碼交出去（上層要用它去清索引）。這裡還不刪。
     if (path === "/internal/pre-delete") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
-      return json({ ok: true, recoveryCode: profile.recoveryCode || null });
+      return json({ ok: true, recoveryCode: profile.recoveryCode || null, nick: profile.nick || null });
     }
 
     // 真的刪。deleteAll 之後這個 Durable Object 就是空的，
@@ -1283,7 +1674,11 @@ export class PlayerDO {
 
     if (path === "/api/profile/update") {
       if (body.token !== profile.token) return json({ ok: false, error: "bad token" }, 403);
-      if (body.nick != null) profile.nick = cleanNick(body.nick);
+      if (body.nick != null) {
+        profile.nick = cleanNick(body.nick);
+        // 上層登記成功才會帶 nameOwned 進來（改名字一定會走那條路）
+        if (body.nameOwned === true) profile.nameOwned = true;
+      }
       if (body.avatar != null) profile.avatar = cleanAvatar(body.avatar, profile.avatar);
       await this.state.storage.put("profile", profile);
       return json({ ok: true, profile: publicProfile(profile) });
