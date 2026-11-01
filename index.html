@@ -659,6 +659,68 @@
   .avatar-opt:hover{ transform:translateY(-2px); }
   .avatar-opt.sel{ border-color:var(--accent2); background:rgba(98,184,255,.12); }
 
+  /* ---------- 好友 ---------- */
+  /* 主畫面從三個入口變四個。四欄在手機上每格只剩 ~78px，
+     所以字要小一點、左右的內距要收掉，不然「全場競速」會被擠成兩行。 */
+  .home-nav{ grid-template-columns:repeat(4,1fr); }
+  .home-nav button{ font-size:12.5px; padding:12px 2px; }
+
+  /* 有待處理的邀請時，好友鍵右上角那顆紅點。數字直接寫在裡面，
+     不然使用者只知道「有東西」卻不知道有幾封。 */
+  .nav-badge{ position:relative; }
+  .nav-badge[data-count]::after{
+    content:attr(data-count);
+    position:absolute; top:4px; right:6px;
+    min-width:17px; height:17px; padding:0 4px;
+    border-radius:999px; background:var(--red); color:#fff;
+    font-size:11px; font-weight:700; line-height:17px; text-align:center;
+    box-shadow:0 0 8px rgba(248,113,113,.8);
+  }
+
+  .fr-search{ display:flex; gap:8px; margin-bottom:6px; }
+  .fr-search .text-input{ flex:1; text-align:left; }
+  .fr-search button{
+    flex:0 0 auto; padding:0 18px; border-radius:12px; cursor:pointer;
+    font-family:inherit; font-size:15px; font-weight:700; color:var(--text);
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    border:none;
+  }
+  .fr-hint{ color:var(--muted); font-size:12.5px; line-height:1.6; margin:0 0 14px; }
+
+  .fr-section{ margin-top:18px; }
+  .fr-section h4{
+    margin:0 0 8px; font-size:13px; color:var(--muted);
+    font-weight:700; letter-spacing:.06em;
+  }
+  .fr-empty{ color:var(--muted); font-size:13px; text-align:center; padding:14px 0; }
+
+  /* 一張人的卡片：頭像、名字、一行附註，右邊是動作鍵。
+     搜尋結果、邀請、好友清單共用同一張，三個地方長得一樣比較好認。 */
+  .fr-card{
+    display:flex; align-items:center; gap:12px;
+    background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:11px 13px; margin-bottom:9px;
+  }
+  .fr-card.tap{ cursor:pointer; transition:border-color .15s ease, transform .12s ease; }
+  .fr-card.tap:hover{ border-color:var(--accent2); transform:translateY(-1px); }
+  .fr-card .avatar{ flex:0 0 auto; width:44px; height:44px; font-size:22px; }
+  .fr-card .who{ flex:1; min-width:0; }
+  .fr-card .who b{ display:block; font-size:15px; color:var(--text); }
+  .fr-card .who span{ display:block; font-size:12px; color:var(--muted); margin-top:2px; }
+  .fr-acts{ flex:0 0 auto; display:flex; gap:6px; }
+  .fr-btn{
+    padding:7px 12px; border-radius:999px; cursor:pointer;
+    font-family:inherit; font-size:13px; font-weight:700;
+    border:1px solid var(--accent2); background:transparent; color:var(--accent2);
+    transition:background .15s ease, color .15s ease;
+  }
+  .fr-btn:hover{ background:var(--accent2); color:#0d0620; }
+  .fr-btn.ghost{ border-color:var(--muted); color:var(--muted); }
+  .fr-btn.ghost:hover{ background:var(--muted); color:#0d0620; }
+  .fr-btn:disabled{ opacity:.5; cursor:default; }
+  .fr-btn:disabled:hover{ background:transparent; color:var(--accent2); }
+  .fr-state{ font-size:12.5px; color:var(--muted); white-space:nowrap; }
+
   .color-row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   .color-opt{
     width:34px; height:34px; border-radius:50%; cursor:pointer;
@@ -1143,6 +1205,58 @@
       </div>
     </div>
   </section>
+  <!-- 好友：搜尋、收到的邀請、好友清單，三塊疊在同一頁 -->
+  <section id="screen-friends" class="screen">
+    <div class="era-panel">
+      <div class="panel-title">好友</div>
+
+      <div class="fr-search">
+        <input id="fr-nick" class="text-input" maxlength="10" placeholder="輸入對方的名字" autocomplete="off">
+        <button id="fr-search-btn">搜尋</button>
+      </div>
+      <p class="fr-hint">名字在這個遊戲裡是唯一的，所以要一個字不差才找得到。</p>
+      <p id="fr-error" style="text-align:center; color:var(--red); font-size:13px; min-height:18px; margin:0 0 6px;"></p>
+
+      <div id="fr-result"></div>
+
+      <div class="fr-section" id="fr-incoming-wrap" hidden>
+        <h4>收到的邀請</h4>
+        <div id="fr-incoming"></div>
+      </div>
+
+      <div class="fr-section" id="fr-outgoing-wrap" hidden>
+        <h4>已送出</h4>
+        <div id="fr-outgoing"></div>
+      </div>
+
+      <div class="fr-section">
+        <h4>我的好友</h4>
+        <div id="fr-list"></div>
+      </div>
+
+      <div class="actions-center" style="margin-top:18px;">
+        <button class="btn-ghost" id="fr-back-btn">回主畫面</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 好友的檔案。資料是點進來時現查的，不是清單上那份快照 -->
+  <section id="screen-friend-profile" class="screen">
+    <div class="era-panel">
+      <div style="text-align:center; margin-bottom:6px;">
+        <span class="avatar" id="fp-avatar" style="width:72px; height:72px; font-size:36px;"></span>
+        <div style="font-size:20px; font-weight:800; margin-top:10px;" id="fp-nick">-</div>
+        <div style="font-size:12.5px; color:var(--muted); margin-top:4px;" id="fp-since">-</div>
+      </div>
+      <div id="fp-stats" style="margin-top:14px;"></div>
+      <p id="fp-error" style="text-align:center; color:var(--red); font-size:13px; min-height:18px; margin:8px 0 0;"></p>
+      <div class="actions-center" style="margin-top:14px;">
+        <button class="btn-ghost" id="fp-remove-btn">刪除好友</button>
+        <button class="btn-ghost" id="fp-back-btn">返回</button>
+      </div>
+    </div>
+  </section>
+
   <!-- 年代篩選畫面 -->
   <section id="screen-era" class="screen active">
     <div class="era-panel">
@@ -1204,6 +1318,15 @@
           <path d="M12 14v4M8.5 21h7"/>
         </svg>
         <span>排行榜</span>
+      </button>
+      <button class="neon-cyan nav-badge" id="go-friends-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="9" cy="8" r="3.4"/>
+          <path d="M3.2 19a5.8 5.8 0 0 1 11.6 0"/>
+          <path d="M16.5 5.4a3.4 3.4 0 0 1 0 6.5"/>
+          <path d="M17.6 14.2A5.8 5.8 0 0 1 21 19"/>
+        </svg>
+        <span>好友</span>
       </button>
       <button class="neon-pink" id="go-mp-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1995,6 +2118,11 @@ function showScreen(id){
   document.body.dataset.screen = id;
   // 暱稱可能剛改過，每次進連線對戰都重算一次要顯示的名字
   if(id === 'screen-mp-menu' && typeof renderMpWho === 'function') renderMpWho();
+  /* 回到主畫面時順手看一下有沒有新的好友邀請。只在主畫面查，
+     而且不等它回來 —— 畫面不該為了一顆紅點卡住。 */
+  if(id === 'screen-era' && typeof 讀好友清單 === 'function' && 有身分()){
+    讀好友清單().then(()=> 更新好友紅點());
+  }
 
   if(離開的 && 離開的 !== id) onLeaveScreen(離開的);
   // 身分列在遊戲進行中要收起來，切畫面後重新判斷一次
@@ -3836,6 +3964,14 @@ document.getElementById('setup-create-btn').addEventListener('click', async ()=>
       btn.disabled = false; btn.textContent = '建立檔案，開始玩';
       return;
     }
+    /* 名字被用走了也不能落到下面的離線分支 —— 那會在本機建一份同名的檔案，
+       永遠同步不上去，而畫面上看起來一切正常。名字在這個遊戲裡是唯一的，
+       換一個就好，這是使用者改得動的事，要直接講。 */
+    if(d && !d.ok && d.error === 'nick taken'){
+      err.textContent = '「' + nick + '」已經有人用了，換一個名字吧';
+      btn.disabled = false; btn.textContent = '建立檔案，開始玩';
+      return;
+    }
     if(!d || !d.ok) throw new Error((d && d.error) || 'create failed');
     profile = Object.assign({}, d.profile, { token: d.token, recoveryCode: d.recoveryCode, pendingSync: false });
   }catch(e){
@@ -3989,17 +4125,42 @@ document.getElementById('edit-save-btn').addEventListener('click', async ()=>{
   const avatar = { emoji: editDraft.emoji, color: editDraft.color };
 
   btn.disabled = true; btn.textContent = '儲存中…'; err.textContent = '';
-  // 本機先更新，畫面立刻反應；伺服器那邊失敗再回報，但不把使用者的修改吃掉
-  profile.nick = nick; profile.avatar = avatar;
-  saveLocalProfile();
-  renderIdentity();
 
-  if(profile.token){
+  /* 名字有改動的話要先問過伺服器。名字是唯一的，可能被擋下來 ——
+     照舊「先改本機再同步」的話，被擋的當下本機已經改掉了，
+     畫面上會顯示一個其實不屬於你的名字。頭像沒有這個問題，
+     所以只有名字真的變了才多等這一趟。 */
+  const 改了名字 = nick !== profile.nick;
+  if(改了名字 && profile.token){
     try{
       const d = await profileApi('/api/profile/update', { playerId: profile.id, token: profile.token, nick, avatar });
-      if(!d || !d.ok) err.textContent = '已存在這台裝置，但同步到伺服器失敗';
+      if(d && !d.ok && d.error === 'nick taken'){
+        err.textContent = '「' + nick + '」已經有人用了，換一個名字吧';
+        btn.disabled = false; btn.textContent = '儲存';
+        return;
+      }
+      if(!d || !d.ok){ throw new Error((d && d.error) || 'update failed'); }
+      profile.nick = nick; profile.avatar = avatar;
+      saveLocalProfile();
+      renderIdentity();
     }catch(e){
-      err.textContent = '已存在這台裝置，但連不上伺服器';
+      // 連不上就不要改名字 —— 改了也不知道那個名字拿不拿得到
+      err.textContent = '連不上伺服器，名字沒有改成功';
+      btn.disabled = false; btn.textContent = '儲存';
+      return;
+    }
+  }else{
+    // 只改頭像（或還沒同步到伺服器的檔案）：本機先更新，畫面立刻反應
+    profile.nick = nick; profile.avatar = avatar;
+    saveLocalProfile();
+    renderIdentity();
+    if(profile.token){
+      try{
+        const d = await profileApi('/api/profile/update', { playerId: profile.id, token: profile.token, nick, avatar });
+        if(!d || !d.ok) err.textContent = '已存在這台裝置，但同步到伺服器失敗';
+      }catch(e){
+        err.textContent = '已存在這台裝置，但連不上伺服器';
+      }
     }
   }
   btn.disabled = false; btn.textContent = '儲存';
@@ -4007,6 +4168,268 @@ document.getElementById('edit-save-btn').addEventListener('click', async ()=>{
     renderProfileScreen();
     showScreen('screen-profile');
   }
+});
+
+/* ========================= 好友 =========================
+   名字在這個遊戲裡是唯一的，所以「搜尋」其實是精準查找 —— 一個字不差才找得到。
+   三份清單（好友、收到的邀請、已送出）都從同一支端點一次拿回來，
+   前端靠它判斷搜尋結果上那顆鍵該寫「加好友」「已送出」還是「已經是好友」。 */
+
+const 好友 = { friends: [], incoming: [], outgoing: [], 找到的: null, 看誰的檔案: null };
+
+// 沒有伺服器身分（還沒同步的離線檔案）就整個用不了，要講清楚而不是讓按鍵沒反應
+function 有身分(){ return !!(profile && profile.token && !profile.pendingSync); }
+
+async function friendsApi(path, extra){
+  return profileApi(path, Object.assign({ playerId: profile.id, token: profile.token }, extra || {}));
+}
+
+async function 讀好友清單(){
+  if(!有身分()) return false;
+  try{
+    const d = await friendsApi('/api/friends/list');
+    if(!d || !d.ok) return false;
+    好友.friends = d.friends || [];
+    好友.incoming = d.incoming || [];
+    好友.outgoing = d.outgoing || [];
+    return true;
+  }catch(e){ return false; }
+}
+
+// 主畫面那顆好友鍵右上角的紅點。沒有待處理的邀請就不顯示。
+function 更新好友紅點(){
+  const btn = document.getElementById('go-friends-btn');
+  if(!btn) return;
+  const n = 好友.incoming.length;
+  if(n > 0) btn.dataset.count = n > 99 ? '99+' : String(n);
+  else btn.removeAttribute('data-count');
+}
+
+function 入行於(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+// 搜尋結果、邀請、好友清單共用同一張卡片，三個地方長得一樣比較好認
+function 人卡片(人, 附註, 動作, 可點){
+  const card = document.createElement('div');
+  card.className = 'fr-card' + (可點 ? ' tap' : '');
+  const av = document.createElement('span');
+  av.className = 'avatar';
+  paintAvatar(av, 人.avatar);
+  const who = document.createElement('div');
+  who.className = 'who';
+  const b = document.createElement('b'); b.textContent = 人.nick;
+  const sp = document.createElement('span'); sp.textContent = 附註 || '';
+  who.appendChild(b); who.appendChild(sp);
+  const acts = document.createElement('div');
+  acts.className = 'fr-acts';
+  (動作 || []).forEach(a=>{
+    // 用 in 判斷而不是看值 —— 空字串是 falsy，會掉到下面去建一顆沒有文字的按鈕
+    if('text' in a){
+      const t = document.createElement('span');
+      t.className = 'fr-state'; t.textContent = a.text;
+      acts.appendChild(t);
+      return;
+    }
+    const btn = document.createElement('button');
+    btn.className = 'fr-btn' + (a.ghost ? ' ghost' : '');
+    btn.textContent = a.label;
+    if(a.disabled) btn.disabled = true;
+    // 卡片本身也可能是可點的（進對方的檔案），按鍵不該順便觸發它
+    btn.addEventListener('click', e=>{ e.stopPropagation(); a.run(btn); });
+    acts.appendChild(btn);
+  });
+  card.appendChild(av); card.appendChild(who); card.appendChild(acts);
+  if(可點) card.addEventListener('click', 可點);
+  return card;
+}
+
+function 戰績一行(p){
+  const st = p && p.stats;
+  if(!st || !st.games) return '還沒有遊玩紀錄';
+  const 率 = st.total ? Math.round(st.correct / st.total * 100) : 0;
+  return '玩過 ' + st.games + ' 場 · 答對率 ' + 率 + '%';
+}
+
+function 渲染搜尋結果(){
+  const box = document.getElementById('fr-result');
+  box.innerHTML = '';
+  const 人 = 好友.找到的;
+  if(!人) return;
+
+  if(人.id === profile.id){
+    box.appendChild(人卡片(人, '這是你自己', []));
+    return;
+  }
+  if(好友.friends.some(f=>f.id === 人.id)){
+    box.appendChild(人卡片(人, 戰績一行(人), [{ text:'已經是好友' }], ()=> 開啟好友檔案(人.id)));
+    return;
+  }
+  if(好友.outgoing.some(f=>f.id === 人.id)){
+    box.appendChild(人卡片(人, 戰績一行(人), [{ text:'邀請已送出' }]));
+    return;
+  }
+  if(好友.incoming.some(f=>f.id === 人.id)){
+    // 對方已經寄來了，這時候按「加好友」會直接成立，所以鍵要寫得不一樣
+    box.appendChild(人卡片(人, 戰績一行(人), [{ label:'接受邀請', run:(b)=> 送邀請(人.id, b) }]));
+    return;
+  }
+  box.appendChild(人卡片(人, 戰績一行(人), [{ label:'加好友', run:(b)=> 送邀請(人.id, b) }]));
+}
+
+function 渲染好友頁(){
+  const 入 = document.getElementById('fr-incoming');
+  const 出 = document.getElementById('fr-outgoing');
+  const 單 = document.getElementById('fr-list');
+  入.innerHTML = ''; 出.innerHTML = ''; 單.innerHTML = '';
+
+  document.getElementById('fr-incoming-wrap').hidden = 好友.incoming.length === 0;
+  好友.incoming.forEach(f=>{
+    入.appendChild(人卡片(f, '想加你好友', [
+      { label:'接受', run:(b)=> 回覆邀請(f.id, true, b) },
+      { label:'拒絕', ghost:true, run:(b)=> 回覆邀請(f.id, false, b) },
+    ]));
+  });
+
+  document.getElementById('fr-outgoing-wrap').hidden = 好友.outgoing.length === 0;
+  好友.outgoing.forEach(f=>{
+    出.appendChild(人卡片(f, '等對方回覆', [{ text:'已送出' }]));
+  });
+
+  if(好友.friends.length === 0){
+    const e = document.createElement('div');
+    e.className = 'fr-empty';
+    e.textContent = 有身分() ? '還沒有好友。用上面的搜尋框找找看。' : '這份檔案還沒同步到伺服器，暫時不能用好友功能。';
+    單.appendChild(e);
+  }else{
+    好友.friends.forEach(f=>{
+      單.appendChild(人卡片(f, '點一下看他的紀錄', [
+        { label:'刪除', ghost:true, run:(b)=> 刪好友(f.id, b) },
+      ], ()=> 開啟好友檔案(f.id)));
+    });
+  }
+  更新好友紅點();
+}
+
+async function 重新整理好友頁(){
+  await 讀好友清單();
+  渲染好友頁();
+  渲染搜尋結果();
+}
+
+async function 送邀請(targetId, btn){
+  const err = document.getElementById('fr-error');
+  err.textContent = '';
+  btn.disabled = true; btn.textContent = '送出中…';
+  try{
+    const d = await friendsApi('/api/friends/request', { targetId });
+    if(!d || !d.ok){
+      err.textContent = d && d.error === 'too many requests'
+        ? '剛剛送太多邀請了，等一下再試'
+        : (d && d.error === 'inbox full' ? '對方待處理的邀請太多了' : '送不出去，等一下再試');
+      btn.disabled = false; btn.textContent = '加好友';
+      return;
+    }
+  }catch(e){
+    err.textContent = '連不上伺服器';
+    btn.disabled = false; btn.textContent = '加好友';
+    return;
+  }
+  await 重新整理好友頁();
+}
+
+async function 回覆邀請(fromId, accept, btn){
+  const err = document.getElementById('fr-error');
+  err.textContent = '';
+  btn.disabled = true; btn.textContent = '處理中…';
+  try{
+    const d = await friendsApi('/api/friends/respond', { fromId, accept });
+    if(!d || !d.ok) err.textContent = '處理失敗，等一下再試';
+  }catch(e){ err.textContent = '連不上伺服器'; }
+  await 重新整理好友頁();
+}
+
+async function 刪好友(friendId, btn){
+  const 他 = 好友.friends.find(f=>f.id === friendId);
+  if(!confirm('要把「' + (他 ? 他.nick : '這個人') + '」從好友移除嗎？\n兩邊的好友清單都會拿掉。')) return;
+  btn.disabled = true; btn.textContent = '移除中…';
+  try{ await friendsApi('/api/friends/remove', { friendId }); }catch(e){}
+  await 重新整理好友頁();
+}
+
+// 好友的檔案是點進來時現查的 —— 清單上那份快照只有名字和頭像，而且會過期
+async function 開啟好友檔案(id){
+  好友.看誰的檔案 = id;
+  const 快照 = 好友.friends.find(f=>f.id === id) || 好友.找到的 || {};
+  paintAvatar(document.getElementById('fp-avatar'), 快照.avatar || { emoji:'🎤', color:'#ff5fa2' });
+  document.getElementById('fp-nick').textContent = 快照.nick || '…';
+  document.getElementById('fp-since').textContent = '';
+  document.getElementById('fp-stats').innerHTML = '';
+  document.getElementById('fp-error').textContent = '';
+  document.getElementById('fp-remove-btn').hidden = !好友.friends.some(f=>f.id === id);
+  showScreen('screen-friend-profile');
+
+  try{
+    const d = await profileApi('/api/profile', { playerId: id });
+    if(!d || !d.ok){ document.getElementById('fp-error').textContent = '查不到這個人的資料'; return; }
+    if(好友.看誰的檔案 !== id) return;   // 期間又點了別人，這份就不要蓋上去
+    const p = d.profile;
+    paintAvatar(document.getElementById('fp-avatar'), p.avatar);
+    document.getElementById('fp-nick').textContent = p.nick;
+    document.getElementById('fp-since').textContent = p.createdAt ? '入行於 ' + 入行於(p.createdAt) : '';
+    const st = p.stats || {};
+    const 率 = st.total ? Math.round(st.correct / st.total * 100) : 0;
+    document.getElementById('fp-stats').innerHTML =
+      '<div class="fr-card"><div class="who"><b>' + (st.games || 0) + ' 場</b><span>玩過的場次</span></div></div>' +
+      '<div class="fr-card"><div class="who"><b>' + 率 + '%</b><span>答對率（' + (st.correct || 0) + ' / ' + (st.total || 0) + '）</span></div></div>';
+  }catch(e){
+    document.getElementById('fp-error').textContent = '連不上伺服器';
+  }
+}
+
+document.getElementById('go-friends-btn').addEventListener('click', async ()=>{
+  document.getElementById('fr-error').textContent = '';
+  if(!有身分()){
+    好友.friends = []; 好友.incoming = []; 好友.outgoing = []; 好友.找到的 = null;
+    渲染好友頁(); 渲染搜尋結果();
+    showScreen('screen-friends');
+    return;
+  }
+  showScreen('screen-friends');
+  await 重新整理好友頁();
+});
+
+async function 搜尋好友(){
+  const err = document.getElementById('fr-error');
+  const nick = document.getElementById('fr-nick').value.trim();
+  好友.找到的 = null;
+  err.textContent = '';
+  if(!nick){ 渲染搜尋結果(); return; }
+  if(!有身分()){ err.textContent = '這份檔案還沒同步到伺服器，不能搜尋'; 渲染搜尋結果(); return; }
+  const btn = document.getElementById('fr-search-btn');
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const d = await friendsApi('/api/friends/search', { nick });
+    if(d && d.ok && d.found) 好友.找到的 = d.found;
+    else err.textContent = '找不到叫「' + nick + '」的人。名字要一個字不差。';
+  }catch(e){ err.textContent = '連不上伺服器'; }
+  btn.disabled = false; btn.textContent = '搜尋';
+  渲染搜尋結果();
+}
+
+document.getElementById('fr-search-btn').addEventListener('click', 搜尋好友);
+document.getElementById('fr-nick').addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){ e.preventDefault(); 搜尋好友(); }
+});
+document.getElementById('fr-back-btn').addEventListener('click', ()=> 返回('screen-era'));
+document.getElementById('fp-back-btn').addEventListener('click', ()=> 返回('screen-friends'));
+document.getElementById('fp-remove-btn').addEventListener('click', async (e)=>{
+  const id = 好友.看誰的檔案;
+  if(!id) return;
+  await 刪好友(id, e.currentTarget);
+  返回('screen-friends');
 });
 
 /* ---------- 與伺服器同步 ---------- */
@@ -4887,7 +5310,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-10-26-1500';
+const APP_VERSION = '2026-11-01-0821';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');
