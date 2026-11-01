@@ -709,6 +709,29 @@
   }
   .chat-time{ display:block; margin-top:4px; font-size:11px; color:var(--muted); }
 
+  /* 邀請卡片。長得跟一般訊息不一樣是刻意的 —— 它是個要你動作的東西，
+     混在對話裡看起來像一句話的話就會被滑過去。 */
+  .chat-invite{
+    display:flex; align-items:center; gap:10px;
+    padding:11px 13px; border-radius:16px;
+    background:linear-gradient(135deg, rgba(167,139,250,.2), rgba(98,184,255,.14));
+    border:1px solid var(--accent2);
+    max-width:88%;
+  }
+  .chat-invite .txt{ flex:1; min-width:0; }
+  .chat-invite .txt b{ display:block; font-size:14px; }
+  .chat-invite .txt span{ display:block; font-size:12px; color:var(--muted); margin-top:3px; }
+  .chat-invite button{
+    flex:0 0 auto; padding:8px 14px; border-radius:999px; cursor:pointer;
+    font-family:inherit; font-size:13.5px; font-weight:700; color:#0d0620;
+    background:linear-gradient(135deg, var(--accent), var(--accent2)); border:none;
+  }
+  .chat-invite button:disabled{ opacity:.45; cursor:default; }
+
+  .chat-head .play{
+    border-color:var(--accent2); color:var(--accent2);
+  }
+
   .chat-send{ display:flex; gap:8px; padding-top:10px; flex:0 0 auto; }
   .chat-send .text-input{ flex:1; text-align:left; padding:11px 14px; }
   .chat-send button{
@@ -1345,6 +1368,7 @@
       <div class="chat-head">
         <span class="avatar" id="chat-avatar"></span>
         <b id="chat-nick">-</b>
+        <button class="play" id="chat-play-btn">一起玩</button>
         <button id="chat-back-btn">返回</button>
       </div>
       <div class="chat-msgs" id="chat-msgs"></div>
@@ -3354,12 +3378,12 @@ function mpShowHostControls(show){
   if(show) mpRenderEraPick();
 }
 
-document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
-  const code = document.getElementById('mp-join-code').value.trim();
-  const errEl = document.getElementById('mp-join-error');
-  errEl.textContent = '';
+/* 加入房間。抽成函式是因為有兩個入口：自己打房號，以及點好友傳來的邀請。
+   錯誤怎麼顯示交給呼叫的人決定 —— 一個是輸入框下面那行紅字，
+   一個是聊天室裡的錯誤列，兩個位置不一樣。 */
+async function 加入房號(code, 顯示錯誤){
   // 仍然接受 4 位：加長之前開的房間可能還在跑，不該因為改版就進不去
-  if(!/^\d{4,6}$/.test(code)){ errEl.textContent = '請輸入房號（6 位數字）'; return; }
+  if(!/^\d{4,6}$/.test(code)){ 顯示錯誤('請輸入房號（6 位數字）'); return false; }
   const name = (profile && profile.nick) ? profile.nick : '';
   try{
     const res = await fetch(API_BASE + '/api/join-room', {
@@ -3372,10 +3396,10 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
     });
     const data = await res.json();
     if(!data.ok){
-      errEl.textContent = data.error === 'room full' ? '房間已滿'
+      顯示錯誤(data.error === 'room full' ? '房間已滿'
         : data.error === 'already started' ? '這個房間已經開始遊戲了'
-        : '找不到這個房號';
-      return;
+        : '找不到這個房號');
+      return false;
     }
     mp.code = code;
     mp.playerId = data.playerId;
@@ -3389,9 +3413,17 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
     mpShowHostControls(false);
     mpShowChatWidget();
     mpStartPolling();
+    return true;
   }catch(err){
-    errEl.textContent = '連不上伺服器';
+    顯示錯誤('連不上伺服器');
+    return false;
   }
+}
+
+document.getElementById('mp-join-btn').addEventListener('click', ()=>{
+  const errEl = document.getElementById('mp-join-error');
+  errEl.textContent = '';
+  加入房號(document.getElementById('mp-join-code').value.trim(), m => { errEl.textContent = m; });
 });
 
 /* 記住自己在某個房號用過的 playerId。
@@ -4551,17 +4583,10 @@ function 畫訊息(msgs, 接在後面){
   const 空的 = box.querySelector('.chat-empty');
   if(空的 && msgs.length) 空的.remove();
   msgs.forEach(m=>{
+    const 我送的 = m.from === profile.id;
     const row = document.createElement('div');
-    row.className = 'chat-row' + (m.from === profile.id ? ' me' : '');
-    const b = document.createElement('div');
-    b.className = 'chat-bubble';
-    // textContent 而不是 innerHTML —— 訊息是別人打的，當成文字處理
-    b.textContent = m.text;
-    const t = document.createElement('span');
-    t.className = 'chat-time';
-    t.textContent = 時間標(m.at);
-    b.appendChild(t);
-    row.appendChild(b);
+    row.className = 'chat-row' + (我送的 ? ' me' : '');
+    row.appendChild(m.kind === 'invite' ? 邀請卡片(m, 我送的) : 一般氣泡(m));
     box.appendChild(row);
   });
   if(!box.children.length){
@@ -4572,6 +4597,53 @@ function 畫訊息(msgs, 接在後面){
   }
   // 永遠捲到最底下。新訊息進來時使用者想看的是最新那則。
   box.scrollTop = box.scrollHeight;
+}
+
+function 一般氣泡(m){
+  const b = document.createElement('div');
+  b.className = 'chat-bubble';
+  // textContent 而不是 innerHTML —— 訊息是別人打的，一律當成文字處理
+  b.textContent = m.text;
+  const t = document.createElement('span');
+  t.className = 'chat-time';
+  t.textContent = 時間標(m.at);
+  b.appendChild(t);
+  return b;
+}
+
+/* 邀請過期的時間。房間本來就不會一直開著，而且一小時前那張卡片還掛著
+   「加入」鍵的話，按下去只會得到「找不到這個房號」—— 那比直接說過期更難懂。 */
+const 邀請有效期 = 15 * 60 * 1000;
+
+function 邀請卡片(m, 我送的){
+  const 過期 = Date.now() - m.at > 邀請有效期;
+  const box = document.createElement('div');
+  box.className = 'chat-invite';
+
+  const 文 = document.createElement('div');
+  文.className = 'txt';
+  const 標 = document.createElement('b');
+  標.textContent = 我送的 ? '你邀他一起玩' : '邀你一起玩連線對戰';
+  const 細 = document.createElement('span');
+  細.textContent = '房號 ' + m.room + ' · ' + 時間標(m.at) + (過期 ? ' · 已過期' : '');
+  文.appendChild(標); 文.appendChild(細);
+  box.appendChild(文);
+
+  // 自己送的那張不給自己按 —— 房間就是自己開的，人已經在裡面了
+  if(!我送的){
+    const btn = document.createElement('button');
+    btn.textContent = 過期 ? '已過期' : '加入';
+    btn.disabled = 過期;
+    btn.addEventListener('click', async ()=>{
+      btn.disabled = true; btn.textContent = '加入中…';
+      const err = document.getElementById('chat-error');
+      err.textContent = '';
+      const 成功 = await 加入房號(m.room, t => { err.textContent = t; });
+      if(!成功){ btn.disabled = false; btn.textContent = '加入'; }
+    });
+    box.appendChild(btn);
+  }
+  return box;
 }
 
 async function 抓新訊息(){
@@ -4651,6 +4723,29 @@ async function 送出訊息(){
   input.focus();
 }
 
+/* 開一間房，然後把房號當成一則訊息送給對方。
+   先開房再送邀請 —— 反過來的話，對方按「加入」時房間還不存在。 */
+async function 邀他一起玩(){
+  const friendId = 聊天.對方;
+  const btn = document.getElementById('chat-play-btn');
+  const err = document.getElementById('chat-error');
+  if(!friendId) return;
+  btn.disabled = true; btn.textContent = '開房中…';
+  err.textContent = '';
+  try{
+    await createRoom();                     // 成功的話會自己切到等待室
+    if(!mp.code){ throw new Error('no room'); }
+    await friendsApi('/api/chat/send', {
+      friendId, kind:'invite', room: mp.code, text:'我開了一間房，一起玩吧',
+    });
+  }catch(e){
+    // createRoom 失敗時自己會跳提示，這裡只處理「房開了但邀請沒送出去」
+    err.textContent = mp.code ? '房間開好了，但邀請沒送出去 —— 直接把房號給他也可以' : '';
+  }
+  btn.disabled = false; btn.textContent = '一起玩';
+}
+
+document.getElementById('chat-play-btn').addEventListener('click', 邀他一起玩);
 document.getElementById('chat-send-btn').addEventListener('click', 送出訊息);
 document.getElementById('chat-input').addEventListener('keydown', e=>{
   if(e.key === 'Enter'){ e.preventDefault(); 送出訊息(); }
@@ -5581,7 +5676,7 @@ function stopLiveBar(){
 
 // 這個值由 tools/stamp-version.mjs 在每次部署前自動寫入，
 // 手動改會跟 version.json 對不起來，不要自己動。
-const APP_VERSION = '2026-11-01-0939';
+const APP_VERSION = '2026-11-01-1011';
 
 function showAlert(msgHtml, actions){
   const bar = document.getElementById('alert-bar');

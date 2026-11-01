@@ -738,8 +738,17 @@ export default {
         if (!(await withinRate(env, request, "chat", CHAT_SEND_PER_HOUR))) {
           return json({ ok: false, error: "too many messages" }, 429);
         }
+        /* 邀請是一則帶著房號的訊息。房號一定要照格式擋 —— 不擋的話，
+           這個欄位會變成一個「可以塞任意字串、而且會顯示在對方畫面上」的洞。
+           仍然接受 4 位：加長房號之前開的房間可能還在跑。 */
+        const kind = body.kind === "invite" ? "invite" : "text";
+        const room = kind === "invite" ? String(body.room || "").trim() : "";
+        if (kind === "invite" && !/^\d{4,6}$/.test(room)) {
+          return json({ ok: false, error: "bad room" }, 400);
+        }
+        // 邀請的文字是前端給的固定句子，就算是空的也還有房號可以顯示
         const text = cleanText(body.text, MAX_CHAT_LEN);
-        if (!text) return json({ ok: false, error: "empty" }, 400);
+        if (!text && kind !== "invite") return json({ ok: false, error: "empty" }, 400);
 
         // 送訊息一定要確認是好友。少了這一關，知道你 id 的人就能丟訊息給你。
         const 我的 = await 打(myStub, "/api/friends/list", { playerId: me.id, token: body.token });
@@ -750,7 +759,7 @@ export default {
         const r = await chatRoom(env, me.id, friendId).fetch("https://do/chat/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ from: me.id, text }),
+          body: JSON.stringify({ from: me.id, text, kind, room }),
         }).then((r) => r.json().catch(() => ({ ok: false })));
         if (!r.ok) return json(r, 500);
 
@@ -1478,12 +1487,17 @@ export class PlayerDO {
     }
 
     if (path === "/chat/send") {
-      if (!body.from || !body.text) return json({ ok: false, error: "bad message" }, 400);
+      // 邀請可以沒有文字（還有房號可以顯示），一般訊息不行
+      if (!body.from || (!body.text && body.kind !== "invite")) {
+        return json({ ok: false, error: "bad message" }, 400);
+      }
       const msgs = (await this.state.storage.get("msgs")) || [];
       /* seq 用遞增的序號而不是時間戳：同一毫秒送兩則會撞在一起，
          而前端是靠「比上次大的就是新的」在抓增量的。 */
       const seq = ((await this.state.storage.get("seq")) || 0) + 1;
-      const msg = { seq, from: body.from, text: body.text, at: Date.now() };
+      const msg = { seq, from: body.from, text: body.text || "", at: Date.now() };
+      // 只有邀請才帶這兩個欄位，一般訊息不要多塞用不到的東西進儲存
+      if (body.kind === "invite") { msg.kind = "invite"; msg.room = body.room; }
       msgs.push(msg);
       // 只留最近這幾則。超過就從最舊的開始丟。
       if (msgs.length > MAX_CHAT) msgs.splice(0, msgs.length - MAX_CHAT);
